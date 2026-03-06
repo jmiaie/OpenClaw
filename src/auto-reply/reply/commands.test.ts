@@ -1014,6 +1014,7 @@ function buildPolicyParams(
     resolvedVerboseLevel: "off",
     resolvedReasoningLevel: "off",
     resolveDefaultThinkingLevel: async () => undefined,
+    resolveDefaultReasoningLevel: async () => "off" as const,
     provider: "telegram",
     model: "test-model",
     contextTokens: 0,
