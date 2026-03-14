@@ -434,8 +434,8 @@ export const TtsConfigSchema = z
 export const HumanDelaySchema = z
   .object({
     mode: z.union([z.literal("off"), z.literal("natural"), z.literal("custom")]).optional(),
-    minMs: z.number().int().nonnegative().optional(),
-    maxMs: z.number().int().nonnegative().optional(),
+    minMs: z.number().int().min(1000).optional(),
+    maxMs: z.number().int().min(1000).optional(),
   })
   .strict();
 
