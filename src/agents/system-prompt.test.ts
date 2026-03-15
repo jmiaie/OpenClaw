@@ -385,7 +385,7 @@ describe("buildAgentSystemPrompt", () => {
 
     for (const testCase of cases) {
       const prompt = buildAgentSystemPrompt(testCase.params);
-      expect(prompt, testCase.name).toContain("## Current Date & Time");
+      expect(prompt, testCase.name).toContain("## Current Date");
       expect(prompt, testCase.name).toContain("Time zone: America/Chicago");
     }
   });
