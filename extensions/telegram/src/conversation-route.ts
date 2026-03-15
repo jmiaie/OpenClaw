@@ -6,6 +6,7 @@ import { getSessionBindingService } from "../../../src/infra/outbound/session-bi
 import {
   buildAgentSessionKey,
   deriveLastRoutePolicy,
+  pickFirstExistingAgentId,
   resolveAgentRoute,
 } from "../../../src/routing/resolve-route.js";
 import {
