@@ -2270,6 +2270,7 @@ module.exports = {
         channels: {
           "setup-runtime-not-preferred-test": {
             enabled: true,
+            token: "configured",
           },
         },
         plugins: {
