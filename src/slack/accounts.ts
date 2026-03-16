@@ -107,6 +107,19 @@ export function listEnabledSlackAccounts(cfg: OpenClawConfig): ResolvedSlackAcco
     .filter((account) => account.enabled);
 }
 
+/**
+ * Returns true when the Slack account has opted into interactive reply
+ * components (buttons / selects) by including `"interactiveReplies"` in its
+ * `capabilities` array.
+ */
+export function isSlackInteractiveRepliesEnabled(params: {
+  cfg: OpenClawConfig;
+  accountId?: string | null;
+}): boolean {
+  const merged = mergeSlackAccountConfig(params.cfg, normalizeAccountId(params.accountId));
+  return Array.isArray(merged.capabilities) && merged.capabilities.includes("interactiveReplies");
+}
+
 export function resolveSlackReplyToMode(
   account: ResolvedSlackAccount,
   chatType?: string | null,

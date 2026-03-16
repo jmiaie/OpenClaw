@@ -4,6 +4,7 @@ export type { ResolvedSlackAccount } from "../slack/accounts.js";
 export * from "./channel-plugin-common.js";
 export {
   listSlackAccountIds,
+  isSlackInteractiveRepliesEnabled,
   resolveDefaultSlackAccountId,
   resolveSlackAccount,
   resolveSlackReplyToMode,

@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/slack";
+import { isSlackInteractiveRepliesEnabled } from "openclaw/plugin-sdk/slack";
 import { describe, expect, it, vi } from "vitest";
 
 const handleSlackActionMock = vi.fn();
@@ -387,5 +388,67 @@ describe("slackPlugin outbound identity forwarding", () => {
 
     const callArgs = sendSlack.mock.calls[0][2];
     expect(callArgs).not.toHaveProperty("identity");
+  });
+});
+
+describe("isSlackInteractiveRepliesEnabled", () => {
+  it("returns false when capabilities is not set", () => {
+    const cfg: OpenClawConfig = {
+      channels: { slack: { botToken: "xoxb-test", appToken: "xapp-test" } },
+    };
+    expect(isSlackInteractiveRepliesEnabled({ cfg })).toBe(false);
+  });
+
+  it("returns false when capabilities is empty", () => {
+    const cfg: OpenClawConfig = {
+      channels: { slack: { botToken: "xoxb-test", appToken: "xapp-test", capabilities: [] } },
+    };
+    expect(isSlackInteractiveRepliesEnabled({ cfg })).toBe(false);
+  });
+
+  it("returns true when interactiveReplies is in capabilities", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        slack: {
+          botToken: "xoxb-test",
+          appToken: "xapp-test",
+          capabilities: ["interactiveReplies"],
+        },
+      },
+    };
+    expect(isSlackInteractiveRepliesEnabled({ cfg })).toBe(true);
+  });
+
+  it("returns false when capabilities has other entries but not interactiveReplies", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        slack: {
+          botToken: "xoxb-test",
+          appToken: "xapp-test",
+          capabilities: ["otherCapability"],
+        },
+      },
+    };
+    expect(isSlackInteractiveRepliesEnabled({ cfg })).toBe(false);
+  });
+
+  it("reads capabilities from account-level config", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        slack: {
+          botToken: "xoxb-test",
+          appToken: "xapp-test",
+          accounts: {
+            work: {
+              botToken: "xoxb-work",
+              capabilities: ["interactiveReplies"],
+            },
+          },
+        },
+      },
+    };
+    expect(isSlackInteractiveRepliesEnabled({ cfg, accountId: "work" })).toBe(true);
+    // Default account should not have interactiveReplies
+    expect(isSlackInteractiveRepliesEnabled({ cfg })).toBe(false);
   });
 });
