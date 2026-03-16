@@ -48,6 +48,11 @@ function getLastDispatchedContext(): GatewayRequestContext | undefined {
   return call?.context;
 }
 
+function getLastDispatchedParams(): Record<string, unknown> | undefined {
+  const call = handleGatewayRequest.mock.calls.at(-1)?.[0];
+  return call?.req?.params as Record<string, unknown> | undefined;
+}
+
 async function importServerPluginsModule(): Promise<ServerPluginsModule> {
   return import("./server-plugins.js");
 }
@@ -160,6 +165,28 @@ describe("loadGatewayPlugins", () => {
     const subagent = call?.runtimeOptions?.subagent;
     expect(typeof subagent?.getSessionMessages).toBe("function");
     expect(typeof subagent?.getSession).toBe("function");
+  });
+
+  test("forwards provider and model overrides for agent runs", async () => {
+    const serverPlugins = await importServerPluginsModule();
+    const runtime = createSubagentRuntime(serverPlugins);
+    serverPlugins.setFallbackGatewayContext(createTestContext("forward-overrides"));
+
+    await runtime.run({
+      sessionKey: "s-override",
+      message: "use the override",
+      provider: "anthropic",
+      model: "claude-haiku-4-6",
+      deliver: false,
+    });
+
+    expect(getLastDispatchedParams()).toMatchObject({
+      sessionKey: "s-override",
+      message: "use the override",
+      provider: "anthropic",
+      model: "claude-haiku-4-6",
+      deliver: false,
+    });
   });
 
   test("shares fallback context across module reloads for existing runtimes", async () => {
