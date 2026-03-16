@@ -30,6 +30,7 @@ import {
   createOpenAIFastModeWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIServiceTierWrapper,
+  createResponsesToolChoiceDefaultWrapper,
   resolveOpenAIFastMode,
   resolveOpenAIServiceTier,
 } from "./openai-stream-wrappers.js";
@@ -406,6 +407,10 @@ export function applyExtraParamsToAgent(
     agent.streamFn,
     effectiveExtraParams,
   );
+
+  // Inject default tool_choice for openai-responses custom providers using the
+  // streamSimple HTTP path, where tool_choice is not set by pi-ai.
+  agent.streamFn = createResponsesToolChoiceDefaultWrapper(agent.streamFn);
 
   const rawParallelToolCalls = resolveAliasedParamValue(
     [resolvedExtraParams, override],
