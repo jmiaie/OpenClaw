@@ -324,20 +324,21 @@ function renderContextNotice(
   showPricingThresholdNotice = true,
 ) {
   const inputUsed = session?.inputTokens ?? 0;
-  const contextUsed = Math.max(session?.totalTokens ?? 0, inputUsed);
+  const contextUsed = session?.totalTokens ?? 0;
+  const hasContextUsed = contextUsed > 0;
   const runtimeLimit = session?.contextTokens ?? defaults?.contextTokens ?? 0;
   const known = resolveKnownContextThresholds(session, defaults);
   const modelLimit = known?.modelContextTokens ?? runtimeLimit;
-  if (!contextUsed || !modelLimit) {
+  if (!modelLimit || (!hasContextUsed && !inputUsed)) {
     return nothing;
   }
 
-  const modelRatio = contextUsed / modelLimit;
+  const modelRatio = hasContextUsed ? contextUsed / modelLimit : 0;
   const shouldShowPricing =
     showPricingThresholdNotice &&
     typeof known?.pricingThresholdTokens === "number" &&
     inputUsed >= known.pricingThresholdTokens;
-  const shouldShowModel = modelRatio >= 0.85 || shouldShowPricing;
+  const shouldShowModel = hasContextUsed && modelRatio >= 0.85;
   if (!shouldShowPricing && !shouldShowModel) {
     return nothing;
   }
@@ -347,8 +348,9 @@ function renderContextNotice(
   const pricingThreshold = showPricingThresholdNotice
     ? (known?.pricingThresholdTokens ?? null)
     : null;
-  const shouldShowModelWarning = contextUsed >= modelLimit;
-  const shouldShow = shouldShowPricing || shouldShowModelWarning || (!known && modelRatio >= 0.85);
+  const shouldShowModelWarning = hasContextUsed && contextUsed >= modelLimit;
+  const shouldShowCompactionHint = shouldShowPricing && hasContextUsed && contextUsed < modelLimit;
+  const shouldShow = shouldShowPricing || shouldShowModelWarning || shouldShowModel;
   if (!shouldShow) {
     return nothing;
   }
@@ -366,13 +368,25 @@ function renderContextNotice(
     >
       <div class="context-notice__summary">
         <span class="context-notice__summary-label">Model context</span>
-        <span class="context-notice__metric context-notice__metric--used">
-          Used ${formatTokensCompact(contextUsed)}
-        </span>
+        ${
+          hasContextUsed
+            ? html`
+              <span class="context-notice__metric context-notice__metric--used">
+                Used ${formatTokensCompact(contextUsed)}
+              </span>
+            `
+            : nothing
+        }
         ${
           pricingThreshold
             ? html`
-              <span class="context-notice__separator">/</span>
+              ${
+                hasContextUsed
+                  ? html`
+                      <span class="context-notice__separator">/</span>
+                    `
+                  : nothing
+              }
               <span class="context-notice__metric context-notice__metric--pricing">
                 Higher-rate ${formatTokensCompact(pricingThreshold)}
               </span>
@@ -389,6 +403,15 @@ function renderContextNotice(
           ? html`
               <div class="context-notice__note context-notice__note--pricing">
                 Higher-rate billing threshold crossed.
+              </div>
+            `
+          : nothing
+      }
+      ${
+        shouldShowCompactionHint
+          ? html`
+              <div class="context-notice__note context-notice__note--pricing">
+                Auto-compaction tracks current context, not cumulative session usage.
               </div>
             `
           : nothing

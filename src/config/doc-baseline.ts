@@ -522,6 +522,17 @@ async function readIfExists(filePath: string): Promise<string | null> {
   }
 }
 
+function normalizeJsonForCompare(text: string | null): string | null {
+  if (text === null) {
+    return null;
+  }
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}
+
 async function writeIfChanged(filePath: string, next: string): Promise<boolean> {
   const current = await readIfExists(filePath);
   if (current === next) {
@@ -544,7 +555,9 @@ export async function writeConfigDocBaselineStatefile(params?: {
   const rendered = await renderConfigDocBaselineStatefile();
   const currentJson = await readIfExists(jsonPath);
   const currentStatefile = await readIfExists(statefilePath);
-  const changed = currentJson !== rendered.json || currentStatefile !== rendered.jsonl;
+  const changed =
+    normalizeJsonForCompare(currentJson) !== normalizeJsonForCompare(rendered.json) ||
+    currentStatefile !== rendered.jsonl;
 
   if (params?.check) {
     return {
