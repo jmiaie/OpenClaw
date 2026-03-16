@@ -1,4 +1,9 @@
 import {
+  buildClawApiModelDefinition,
+  CLAWAPI_BASE_URL,
+  CLAWAPI_MODEL_CATALOG,
+} from "../agents/clawapi-models.js";
+import {
   buildHuggingfaceModelDefinition,
   HUGGINGFACE_BASE_URL,
   HUGGINGFACE_MODEL_CATALOG,
@@ -32,6 +37,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { ModelApi } from "../config/types.models.js";
 import { KILOCODE_BASE_URL } from "../providers/kilocode-shared.js";
 import {
+  CLAWAPI_DEFAULT_MODEL_REF,
   HUGGINGFACE_DEFAULT_MODEL_REF,
   KILOCODE_DEFAULT_MODEL_REF,
   MISTRAL_DEFAULT_MODEL_REF,
@@ -106,6 +112,28 @@ function mergeProviderModels<T extends { id: string }>(
 function getNormalizedProviderApiKey(existingProvider: Record<string, unknown> | undefined) {
   const { apiKey } = (existingProvider ?? {}) as { apiKey?: string };
   return typeof apiKey === "string" ? apiKey.trim() || undefined : undefined;
+}
+
+export function applyClawApiProviderConfig(cfg: OpenClawConfig): OpenClawConfig {
+  const models = { ...cfg.agents?.defaults?.models };
+  models[CLAWAPI_DEFAULT_MODEL_REF] = {
+    ...models[CLAWAPI_DEFAULT_MODEL_REF],
+    alias: models[CLAWAPI_DEFAULT_MODEL_REF]?.alias ?? "ClawAPI",
+  };
+
+  const clawApiModels = CLAWAPI_MODEL_CATALOG.map(buildClawApiModelDefinition);
+  return applyProviderConfigWithModelCatalog(cfg, {
+    agentModels: models,
+    providerId: "clawapi",
+    api: "openai-completions",
+    baseUrl: CLAWAPI_BASE_URL,
+    catalogModels: clawApiModels,
+  });
+}
+
+export function applyClawApiConfig(cfg: OpenClawConfig): OpenClawConfig {
+  const next = applyClawApiProviderConfig(cfg);
+  return applyAgentDefaultModelPrimary(next, CLAWAPI_DEFAULT_MODEL_REF);
 }
 
 export function applyZaiProviderConfig(
