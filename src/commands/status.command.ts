@@ -1,41 +1,12 @@
-import { formatCliCommand } from "../cli/command-format.js";
-import { withProgress } from "../cli/progress.js";
 import { resolveGatewayPort } from "../config/config.js";
-import { buildGatewayConnectionDetails, callGateway } from "../gateway/call.js";
-import { info } from "../globals.js";
-import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
+import type { OpenClawConfig } from "../config/config.js";
 import type { HeartbeatEventPayload } from "../infra/heartbeat-events.js";
-import { formatUsageReportLines, loadProviderUsageSummary } from "../infra/provider-usage.js";
-import { normalizeUpdateChannel, resolveUpdateChannelDisplay } from "../infra/update-channels.js";
-import { formatGitInstallLabel } from "../infra/update-check.js";
-import {
-  resolveMemoryCacheSummary,
-  resolveMemoryFtsState,
-  resolveMemoryVectorState,
-  type Tone,
-} from "../memory/status-format.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { runSecurityAudit } from "../security/audit.js";
-import { getTerminalTableWidth, renderTable } from "../terminal/table.js";
-import { theme } from "../terminal/theme.js";
-import { formatHealthChannelLines, type HealthSummary } from "./health.js";
-import { resolveControlUiLinks } from "./onboard-helpers.js";
-import { statusAllCommand } from "./status-all.js";
-import { groupChannelIssuesByChannel } from "./status-all/channel-issues.js";
-import { formatGatewayAuthUsed } from "./status-all/format.js";
-import { getDaemonStatusSummary, getNodeDaemonStatusSummary } from "./status.daemon.js";
-import {
-  formatDuration,
-  formatKTokens,
-  formatTokensCompact,
-  shortenText,
-} from "./status.format.js";
+import type { HealthSummary } from "./health.js";
 import { scanStatus } from "./status.scan.js";
-import {
-  formatUpdateAvailableHint,
-  formatUpdateOneLiner,
-  resolveUpdateAvailability,
-} from "./status.update.js";
+
+type Tone = "ok" | "warn" | "muted";
 
 function resolvePairingRecoveryContext(params: {
   error?: string | null;
@@ -76,6 +47,7 @@ export async function statusCommand(
   runtime: RuntimeEnv,
 ) {
   if (opts.all && !opts.json) {
+    const { statusAllCommand } = await import("./status-all.js");
     await statusAllCommand(runtime, { timeoutMs: opts.timeoutMs });
     return;
   }
@@ -84,7 +56,7 @@ export async function statusCommand(
     { json: opts.json, timeoutMs: opts.timeoutMs, all: opts.all },
     runtime,
   );
-  const securityAudit = opts.json
+  const securityAudit = ifJson(opts.json)
     ? await runSecurityAudit({
         config: scan.cfg,
         sourceConfig: scan.sourceConfig,
@@ -92,7 +64,7 @@ export async function statusCommand(
         includeFilesystem: true,
         includeChannelSecurity: true,
       })
-    : await withProgress(
+    : await runWithProgress(
         {
           label: "Running security audit…",
           indeterminate: true,
@@ -132,24 +104,24 @@ export async function statusCommand(
   } = scan;
 
   const usage = opts.usage
-    ? await withProgress(
+    ? await runWithProgress(
         {
           label: "Fetching usage snapshot…",
           indeterminate: true,
-          enabled: opts.json !== true,
+          enabled: !ifJson(opts.json),
         },
-        async () => await loadProviderUsageSummary({ timeoutMs: opts.timeoutMs }),
+        async () => await loadUsageSummary({ timeoutMs: opts.timeoutMs }),
       )
     : undefined;
   const health: HealthSummary | undefined = opts.deep
-    ? await withProgress(
+    ? await runWithProgress(
         {
           label: "Checking gateway health…",
           indeterminate: true,
-          enabled: opts.json !== true,
+          enabled: !ifJson(opts.json),
         },
         async () =>
-          await callGateway<HealthSummary>({
+          await callGatewayJson<HealthSummary>({
             method: "health",
             params: { probe: true },
             timeoutMs: opts.timeoutMs,
@@ -159,7 +131,7 @@ export async function statusCommand(
     : undefined;
   const lastHeartbeat =
     opts.deep && gatewayReachable
-      ? await callGateway<HeartbeatEventPayload | null>({
+      ? await callGatewayJson<HeartbeatEventPayload | null>({
           method: "last-heartbeat",
           params: {},
           timeoutMs: opts.timeoutMs,
@@ -167,6 +139,8 @@ export async function statusCommand(
         }).catch(() => null)
       : null;
 
+  const { normalizeUpdateChannel, resolveUpdateChannelDisplay } =
+    await import("../infra/update-channels.js");
   const configChannel = normalizeUpdateChannel(cfg.update?.channel);
   const channelInfo = resolveUpdateChannelDisplay({
     configChannel,
@@ -176,6 +150,8 @@ export async function statusCommand(
   });
 
   if (opts.json) {
+    const { getDaemonStatusSummary, getNodeDaemonStatusSummary } =
+      await import("./status.daemon.js");
     const [daemon, nodeDaemon] = await Promise.all([
       getDaemonStatusSummary(),
       getNodeDaemonStatusSummary(),
@@ -214,6 +190,42 @@ export async function statusCommand(
     );
     return;
   }
+
+  const [
+    { formatCliCommand },
+    { buildGatewayConnectionDetails },
+    { info },
+    { formatTimeAgo },
+    { formatUsageReportLines },
+    { formatGitInstallLabel },
+    { resolveMemoryCacheSummary, resolveMemoryFtsState, resolveMemoryVectorState },
+    { getTerminalTableWidth, renderTable },
+    { theme },
+    { formatHealthChannelLines },
+    { resolveControlUiLinks },
+    { groupChannelIssuesByChannel },
+    { formatGatewayAuthUsed },
+    { getDaemonStatusSummary, getNodeDaemonStatusSummary },
+    { formatDuration, formatKTokens, formatTokensCompact, shortenText },
+    { formatUpdateAvailableHint, formatUpdateOneLiner, resolveUpdateAvailability },
+  ] = await Promise.all([
+    import("../cli/command-format.js"),
+    import("../gateway/call.js"),
+    import("../globals.js"),
+    import("../infra/format-time/format-relative.ts"),
+    import("../infra/provider-usage.js"),
+    import("../infra/update-check.js"),
+    import("../memory/status-format.js"),
+    import("../terminal/table.js"),
+    import("../terminal/theme.js"),
+    import("./health.js"),
+    import("./onboard-helpers.js"),
+    import("./status-all/channel-issues.js"),
+    import("./status-all/format.js"),
+    import("./status.daemon.js"),
+    import("./status.format.js"),
+    import("./status.update.js"),
+  ]);
 
   const rich = true;
   const muted = (value: string) => (rich ? theme.muted(value) : value);
@@ -682,4 +694,35 @@ export async function statusCommand(
   } else {
     runtime.log(`  Fix reachability first: ${formatCliCommand("openclaw gateway probe")}`);
   }
+}
+
+function ifJson(value: boolean | undefined): boolean {
+  return value === true;
+}
+
+async function runWithProgress<T>(
+  options: {
+    label: string;
+    indeterminate: boolean;
+    enabled: boolean;
+  },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const { withProgress } = await import("../cli/progress.js");
+  return await withProgress(options, fn);
+}
+
+async function callGatewayJson<T>(params: {
+  method: string;
+  params: Record<string, unknown>;
+  timeoutMs?: number;
+  config: OpenClawConfig;
+}): Promise<T> {
+  const { callGateway } = await import("../gateway/call.js");
+  return await callGateway<T>(params);
+}
+
+async function loadUsageSummary(params: { timeoutMs?: number }) {
+  const { loadProviderUsageSummary } = await import("../infra/provider-usage.js");
+  return await loadProviderUsageSummary(params);
 }

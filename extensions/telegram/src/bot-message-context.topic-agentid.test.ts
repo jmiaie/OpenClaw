@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../../../src/config/config.js";
+import { __testing as threadBindingTesting } from "./thread-bindings.js";
 
 const { defaultRouteConfig } = vi.hoisted(() => ({
   defaultRouteConfig: {
@@ -55,7 +56,12 @@ describe("buildTelegramMessageContext per-topic agentId routing", () => {
   }
 
   beforeEach(() => {
+    threadBindingTesting.resetTelegramThreadBindingsForTests();
     vi.mocked(loadConfig).mockReturnValue(defaultRouteConfig as never);
+  });
+
+  afterEach(() => {
+    threadBindingTesting.resetTelegramThreadBindingsForTests();
   });
 
   it("uses group-level agent when no topic agentId is set", async () => {
