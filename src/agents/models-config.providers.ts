@@ -39,6 +39,7 @@ import {
   resolvePluginDiscoveryProviders,
   runProviderCatalog,
 } from "../plugins/provider-discovery.js";
+import { resolveOwningPluginIdsForProvider, resolvePluginProviders } from "../plugins/providers.js";
 import { findNormalizedProviderValue } from "./model-selection.js";
 import {
   isNonSecretApiKeyMarker,
@@ -686,6 +687,31 @@ async function resolvePluginImplicitProviders(
   return Object.keys(discovered).length > 0 ? discovered : undefined;
 }
 
+function isImplicitProviderPluginEnabled(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+}): boolean {
+  const pluginIds = resolveOwningPluginIdsForProvider({
+    provider: params.provider,
+    config: params.config,
+    workspaceDir: params.workspaceDir,
+    env: params.env,
+  });
+  if (!pluginIds || pluginIds.length === 0) {
+    return true;
+  }
+
+  return resolvePluginProviders({
+    config: params.config,
+    workspaceDir: params.workspaceDir,
+    env: params.env,
+    bundledProviderAllowlistCompat: true,
+    onlyPluginIds: pluginIds,
+  }).some((provider) => provider.id === params.provider);
+}
+
 export async function resolveImplicitProviders(
   params: ImplicitProviderParams,
 ): Promise<ModelsConfig["providers"]> {
@@ -722,7 +748,15 @@ export async function resolveImplicitProviders(
   mergeImplicitProviderSet(providers, await resolvePluginImplicitProviders(context, "paired"));
   mergeImplicitProviderSet(providers, await resolvePluginImplicitProviders(context, "late"));
 
-  if (!providers["github-copilot"]) {
+  if (
+    !providers["github-copilot"] &&
+    isImplicitProviderPluginEnabled({
+      provider: "github-copilot",
+      config: params.config,
+      workspaceDir: params.workspaceDir,
+      env,
+    })
+  ) {
     const implicitCopilot = await resolveImplicitCopilotProvider({
       agentDir: params.agentDir,
       config: params.config,

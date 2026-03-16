@@ -30,6 +30,32 @@ describe("models-config", () => {
     });
   });
 
+  it("does not auto-inject github-copilot when the plugin is explicitly denied", async () => {
+    await withTempHome(async (home) => {
+      await withCopilotGithubToken("gh-token", async () => {
+        const fetchMock = mockCopilotTokenExchangeSuccess();
+        const agentDir = path.join(home, "agent-plugin-denied");
+        await ensureOpenClawModelsJson(
+          {
+            plugins: {
+              deny: ["github-copilot"],
+            },
+            models: { providers: {} },
+          },
+          agentDir,
+        );
+
+        const raw = await fs.readFile(path.join(agentDir, "models.json"), "utf8");
+        const parsed = JSON.parse(raw) as {
+          providers: Record<string, { baseUrl?: string; models?: unknown[] }>;
+        };
+
+        expect(parsed.providers["github-copilot"]).toBeUndefined();
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   it("prefers COPILOT_GITHUB_TOKEN over GH_TOKEN and GITHUB_TOKEN", async () => {
     await withTempHome(async () => {
       await withEnvAsync(
