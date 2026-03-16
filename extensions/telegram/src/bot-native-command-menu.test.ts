@@ -279,4 +279,53 @@ describe("bot-native-command-menu", () => {
     );
     expect(runtimeError).not.toHaveBeenCalled();
   });
+
+  describe("Windows path validation in command hash cache (#44199)", () => {
+    it("continues menu sync even if command hash mkdir fails", async () => {
+      const fs = await import("node:fs/promises");
+      const fsMkdirSpy = vi.spyOn(fs, "mkdir");
+      fsMkdirSpy.mockRejectedValue(new Error("EACCES: permission denied"));
+
+      const setMyCommands = vi.fn(async () => undefined);
+      const deleteMyCommands = vi.fn(async () => undefined);
+      const runtimeLog = vi.fn();
+
+      syncMenuCommandsWithMocks({
+        setMyCommands,
+        deleteMyCommands,
+        runtimeLog,
+        commandsToRegister: [{ command: "cmd", description: "Test" }],
+        accountId: `acc-${Date.now()}`,
+        botIdentity: "bot-test",
+      });
+
+      await vi.waitFor(() => { expect(setMyCommands).toHaveBeenCalled(); });
+
+      // Menu sync succeeds despite cache write failure (best-effort)
+      expect(setMyCommands).toHaveBeenCalledWith([{ command: "cmd", description: "Test" }]);
+      fsMkdirSpy.mockRestore();
+    });
+
+    it("continues menu sync even with a bare '\\\\?' prefix path account", async () => {
+      // writeCachedCommandHash is best-effort: any path resolution failure (including
+      // malformed OPENCLAW_STATE_DIR) is caught inside the try block and logged.
+      // Menu sync should succeed regardless.
+      const setMyCommands = vi.fn(async () => undefined);
+      const deleteMyCommands = vi.fn(async () => undefined);
+      const runtimeLog = vi.fn();
+
+      syncMenuCommandsWithMocks({
+        setMyCommands,
+        deleteMyCommands,
+        runtimeLog,
+        commandsToRegister: [{ command: "win_test", description: "Win Test" }],
+        accountId: `acc-winpath-${Date.now()}`,
+        botIdentity: "bot-winpath",
+      });
+
+      await vi.waitFor(() => { expect(setMyCommands).toHaveBeenCalled(); });
+      // Menu sync succeeds regardless of path validation in writeCachedCommandHash
+      expect(setMyCommands).toHaveBeenCalledWith([{ command: "win_test", description: "Win Test" }]);
+    });
+  });
 });
