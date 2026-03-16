@@ -1,10 +1,16 @@
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveGatewayCredentialsWithSecretInputs } from "./call.js";
 import {
   type ExplicitGatewayAuth,
   isGatewaySecretRefUnavailableError,
   resolveGatewayProbeCredentialsFromConfig,
 } from "./credentials.js";
+
+let probeAuthRuntimeModulePromise: Promise<typeof import("./probe-auth.runtime.js")> | undefined;
+
+function loadProbeAuthRuntimeModule() {
+  probeAuthRuntimeModulePromise ??= import("./probe-auth.runtime.js");
+  return probeAuthRuntimeModulePromise;
+}
 
 function buildGatewayProbeCredentialPolicy(params: {
   cfg: OpenClawConfig;
@@ -40,6 +46,7 @@ export async function resolveGatewayProbeAuthWithSecretInputs(params: {
   explicitAuth?: ExplicitGatewayAuth;
 }): Promise<{ token?: string; password?: string }> {
   const policy = buildGatewayProbeCredentialPolicy(params);
+  const { resolveGatewayCredentialsWithSecretInputs } = await loadProbeAuthRuntimeModule();
   return await resolveGatewayCredentialsWithSecretInputs({
     config: policy.config,
     env: policy.env,

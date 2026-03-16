@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+
+const probeAuthRuntimeLoadSpy = vi.hoisted(() => vi.fn());
+
+vi.mock("./probe-auth.runtime.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("./probe-auth.runtime.js")>("./probe-auth.runtime.js");
+  probeAuthRuntimeLoadSpy();
+  return actual;
+});
+
 import {
   resolveGatewayProbeAuthSafe,
   resolveGatewayProbeAuthWithSecretInputs,
@@ -18,6 +28,22 @@ function expectUnresolvedProbeTokenWarning(cfg: OpenClawConfig) {
 }
 
 describe("resolveGatewayProbeAuthSafe", () => {
+  it("does not load gateway call runtime for sync probe auth", () => {
+    resolveGatewayProbeAuthSafe({
+      cfg: {
+        gateway: {
+          auth: {
+            token: "token-value",
+          },
+        },
+      } as OpenClawConfig,
+      mode: "local",
+      env: {} as NodeJS.ProcessEnv,
+    });
+
+    expect(probeAuthRuntimeLoadSpy).not.toHaveBeenCalled();
+  });
+
   it("returns probe auth credentials when available", () => {
     const result = resolveGatewayProbeAuthSafe({
       cfg: {
