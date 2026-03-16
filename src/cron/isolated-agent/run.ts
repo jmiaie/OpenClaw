@@ -406,12 +406,20 @@ export async function runCronIsolatedAgentTurn(params: {
   if (!modelOverride && !hooksGmailModelApplied) {
     const sessionModelOverride = cronSession.sessionEntry.modelOverride?.trim();
     if (sessionModelOverride) {
-      const sessionProviderOverride =
-        cronSession.sessionEntry.providerOverride?.trim() || resolvedDefault.provider;
+      const sessionProviderOverride = cronSession.sessionEntry.providerOverride?.trim();
+      // When the session has an explicit provider override that differs from
+      // the default, prepend it to the raw model string so the resolver looks
+      // up the correct provider. Keep defaultProvider/defaultModel aligned with
+      // resolvedDefault so buildAllowedModelSet does not auto-whitelist an
+      // unintended provider/model pair.  #18556
+      const raw =
+        sessionProviderOverride && sessionProviderOverride !== resolvedDefault.provider
+          ? `${sessionProviderOverride}/${sessionModelOverride}`
+          : sessionModelOverride;
       const resolvedSessionOverride = resolveAllowedModelRef({
         cfg: cfgWithAgentDefaults,
         catalog: await loadCatalog(),
-        raw: `${sessionProviderOverride}/${sessionModelOverride}`,
+        raw,
         defaultProvider: resolvedDefault.provider,
         defaultModel: resolvedDefault.model,
       });
