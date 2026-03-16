@@ -103,6 +103,7 @@ Docs: https://docs.openclaw.ai
 - Agents/usage tracking: stop forcing `supportsUsageInStreaming: false` on non-native OpenAI-completions providers so compatible backends report token usage and cost again instead of showing all zeros. (#46500) Fixes #46142. Thanks @ademczuk.
 - ACP/acpx: keep plugin-local backend installs under `extensions/acpx` in live repo checkouts so rebuilds no longer delete the runtime binary, and avoid package-lock churn during runtime repair.
 - ACP/gateway startup: use direct Telegram and Discord startup/status helpers instead of routing probes through the plugin runtime, and prepend the selected daemon Node bin dir to service PATH so plugin-local installs can still find `npm` and `pnpm`.
+- ACP/configured bindings: reinitialize configured ACP sessions that are stuck in `error` state instead of reusing the failed runtime.
 
 ## 2026.3.13
 
