@@ -1233,8 +1233,15 @@ export type OpenClawPluginApi = {
    *
    * For high-frequency events (thinking deltas, assistant text), prefer this over
    * hooks. For lifecycle moments (tool complete, agent end), prefer `on()` hooks.
+   *
+   * @param listener - Callback invoked for each event.
+   * @param filter - Optional filter. When `sessionKey` is provided, only events
+   *   matching that session are delivered. Omit for the global firehose.
    */
-  onAgentEvent: (listener: (evt: AgentEventPayload) => void) => () => void;
+  onAgentEvent: (
+    listener: (evt: AgentEventPayload) => void,
+    filter?: { sessionKey?: string },
+  ) => () => void;
   /** Register a lifecycle hook handler */
   on: <K extends PluginHookName>(
     hookName: K,

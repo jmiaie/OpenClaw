@@ -101,6 +101,7 @@ export function handleMessageUpdate(
     if (evtType === "thinking_start" || evtType === "thinking_delta") {
       if (!ctx.state.reasoningStreamOpen) {
         ctx.state.reasoningStreamOpen = true;
+        ctx.state.thinkingStartedAt = Date.now();
         // Emit thinking_start hook on first thinking event
         const hookRunner = ctx.hookRunner ?? getGlobalHookRunner();
         if (hookRunner?.hasHooks("thinking_start")) {
@@ -132,8 +133,20 @@ export function handleMessageUpdate(
       ctx.emitReasoningStream(partialThinking || thinkingContent || thinkingDelta);
     }
     if (evtType === "thinking_end") {
+      // Ensure plugins always get a matching thinking_start before thinking_end
       if (!ctx.state.reasoningStreamOpen) {
         ctx.state.reasoningStreamOpen = true;
+        ctx.state.thinkingStartedAt = Date.now();
+        const hookRunner = ctx.hookRunner ?? getGlobalHookRunner();
+        if (hookRunner?.hasHooks("thinking_start")) {
+          void hookRunner.runThinkingStart(
+            { runId: ctx.params.runId },
+            {
+              agentId: ctx.params.agentId,
+              sessionKey: ctx.params.sessionKey,
+            },
+          );
+        }
       }
       emitReasoningEnd(ctx);
       // Emit thinking_end hook
@@ -144,6 +157,9 @@ export function handleMessageUpdate(
           {
             runId: ctx.params.runId,
             text: fullThinking || thinkingContent || undefined,
+            durationMs: ctx.state.thinkingStartedAt
+              ? Date.now() - ctx.state.thinkingStartedAt
+              : undefined,
           },
           {
             agentId: ctx.params.agentId,
@@ -217,10 +233,40 @@ export function handleMessageUpdate(
     const visibleDelta = chunk ? ctx.stripBlockTags(chunk, ctx.state.partialBlockState) : "";
     if (!wasThinking && ctx.state.partialBlockState.thinking) {
       ctx.state.reasoningStreamOpen = true;
+      ctx.state.thinkingStartedAt = Date.now();
+      // Fire thinking_start hook for <think> tag flows
+      const hookRunner = ctx.hookRunner ?? getGlobalHookRunner();
+      if (hookRunner?.hasHooks("thinking_start")) {
+        void hookRunner.runThinkingStart(
+          { runId: ctx.params.runId },
+          {
+            agentId: ctx.params.agentId,
+            sessionKey: ctx.params.sessionKey,
+          },
+        );
+      }
     }
     // Detect when thinking block ends (</think> tag processed)
     if (wasThinking && !ctx.state.partialBlockState.thinking) {
       emitReasoningEnd(ctx);
+      // Fire thinking_end hook for <think> tag flows
+      const hookRunner = ctx.hookRunner ?? getGlobalHookRunner();
+      if (hookRunner?.hasHooks("thinking_end")) {
+        const fullThinking = extractThinkingFromTaggedText(ctx.state.deltaBuffer);
+        void hookRunner.runThinkingEnd(
+          {
+            runId: ctx.params.runId,
+            text: fullThinking || undefined,
+            durationMs: ctx.state.thinkingStartedAt
+              ? Date.now() - ctx.state.thinkingStartedAt
+              : undefined,
+          },
+          {
+            agentId: ctx.params.agentId,
+            sessionKey: ctx.params.sessionKey,
+          },
+        );
+      }
     }
     const parsedDelta = visibleDelta ? ctx.consumePartialReplyDirectives(visibleDelta) : null;
     const parsedFull = parseReplyDirectives(stripTrailingDirective(next));

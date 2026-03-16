@@ -849,7 +849,19 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
         }
       },
       resolvePath: (input: string) => resolveUserPath(input),
-      onAgentEvent: (listener: (evt: AgentEventPayload) => void) => onAgentEvent(listener),
+      onAgentEvent: registrationMode === "full"
+        ? (listener: (evt: AgentEventPayload) => void, filter?: { sessionKey?: string }) => {
+            if (!filter?.sessionKey) {
+              return onAgentEvent(listener);
+            }
+            const sk = filter.sessionKey;
+            return onAgentEvent((evt) => {
+              if (evt.sessionKey === sk) {
+                listener(evt);
+              }
+            });
+          }
+        : () => () => {},
       on: (hookName, handler, opts) =>
         registrationMode === "full"
           ? registerTypedHook(record, hookName, handler, opts, params.hookPolicy)

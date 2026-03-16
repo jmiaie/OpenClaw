@@ -2242,6 +2242,7 @@ export async function runEmbeddedAttempt(
       const {
         assistantTexts,
         toolMetas,
+        getTotalToolCallCount,
         unsubscribe,
         waitForCompactionRetry,
         isCompactionInFlight,
@@ -2754,7 +2755,7 @@ export async function runEmbeddedAttempt(
                       total: usage.total,
                     }
                   : undefined,
-                toolCallCount: toolMetas.length,
+                toolCallCount: getTotalToolCallCount(),
               },
               {
                 agentId: hookAgentId,
