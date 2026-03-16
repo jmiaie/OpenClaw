@@ -1,8 +1,17 @@
+import {
+  DEFAULT_COPILOT_API_BASE_URL,
+  resolveCopilotApiToken,
+} from "../../extensions/github-copilot/token.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { coerceSecretRef, resolveSecretInputRef } from "../config/types.secrets.js";
 import { isRecord } from "../utils.js";
 import { normalizeOptionalSecretInput } from "../utils/normalize-secret-input.js";
-import { ensureAuthProfileStore, listProfilesForProvider } from "./auth-profiles.js";
+import {
+  ensureAuthProfileStore,
+  resolveAuthProfileEligibility,
+  listProfilesForProvider,
+  resolveAuthProfileOrder,
+} from "./auth-profiles.js";
 import { discoverBedrockModels } from "./bedrock-discovery.js";
 import { normalizeGoogleModelId } from "./model-id-normalization.js";
 import { resolveOllamaApiBase } from "./models-config.providers.discovery.js";
@@ -30,6 +39,7 @@ import {
   resolvePluginDiscoveryProviders,
   runProviderCatalog,
 } from "../plugins/provider-discovery.js";
+import { resolveOwningPluginIdsForProvider, resolvePluginProviders } from "../plugins/providers.js";
 import {
   isNonSecretApiKeyMarker,
   resolveNonEnvSecretRefApiKeyMarker,
@@ -37,6 +47,7 @@ import {
   resolveEnvSecretRefHeaderValueMarker,
 } from "./model-auth-markers.js";
 import { resolveAwsSdkEnvVarName, resolveEnvApiKey } from "./model-auth.js";
+import { findNormalizedProviderValue } from "./model-selection.js";
 export { resolveOllamaApiBase } from "./models-config.providers.discovery.js";
 export { normalizeGoogleModelId };
 
@@ -676,6 +687,31 @@ async function resolvePluginImplicitProviders(
   return Object.keys(discovered).length > 0 ? discovered : undefined;
 }
 
+function isImplicitProviderPluginEnabled(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+}): boolean {
+  const pluginIds = resolveOwningPluginIdsForProvider({
+    provider: params.provider,
+    config: params.config,
+    workspaceDir: params.workspaceDir,
+    env: params.env,
+  });
+  if (!pluginIds || pluginIds.length === 0) {
+    return true;
+  }
+
+  return resolvePluginProviders({
+    config: params.config,
+    workspaceDir: params.workspaceDir,
+    env: params.env,
+    bundledProviderAllowlistCompat: true,
+    onlyPluginIds: pluginIds,
+  }).some((provider) => provider.id === params.provider);
+}
+
 export async function resolveImplicitProviders(
   params: ImplicitProviderParams,
 ): Promise<ModelsConfig["providers"]> {
@@ -712,6 +748,24 @@ export async function resolveImplicitProviders(
   mergeImplicitProviderSet(providers, await resolvePluginImplicitProviders(context, "paired"));
   mergeImplicitProviderSet(providers, await resolvePluginImplicitProviders(context, "late"));
 
+  if (
+    !providers["github-copilot"] &&
+    isImplicitProviderPluginEnabled({
+      provider: "github-copilot",
+      config: params.config,
+      workspaceDir: params.workspaceDir,
+      env,
+    })
+  ) {
+    const implicitCopilot = await resolveImplicitCopilotProvider({
+      agentDir: params.agentDir,
+      config: params.config,
+      env,
+    });
+    if (implicitCopilot) {
+      providers["github-copilot"] = implicitCopilot;
+    }
+  }
   const implicitBedrock = await resolveImplicitBedrockProvider({
     agentDir: params.agentDir,
     config: params.config,
@@ -734,6 +788,137 @@ export async function resolveImplicitProviders(
   return providers;
 }
 
+export async function resolveImplicitCopilotProvider(params: {
+  agentDir: string;
+  config?: OpenClawConfig;
+  env?: NodeJS.ProcessEnv;
+}): Promise<ProviderConfig | null> {
+  const env = params.env ?? process.env;
+  const authStore = ensureAuthProfileStore(params.agentDir, {
+    allowKeychainPrompt: false,
+  });
+  const hasProfile = listProfilesForProvider(authStore, "github-copilot").length > 0;
+  const envToken = env.COPILOT_GITHUB_TOKEN ?? env.GH_TOKEN ?? env.GITHUB_TOKEN;
+  const githubToken = (envToken ?? "").trim();
+
+  if (!hasProfile && !githubToken) {
+    return null;
+  }
+
+  const resolveCopilotTokenFromProfile = (
+    profile: ReturnType<typeof ensureAuthProfileStore>["profiles"][string] | undefined,
+  ): string => {
+    if (!profile || profile.type !== "token") {
+      return "";
+    }
+    const inlineToken = profile.token?.trim() ?? "";
+    if (inlineToken) {
+      return inlineToken;
+    }
+    const tokenRef = coerceSecretRef(profile.tokenRef);
+    if (tokenRef?.source === "env" && tokenRef.id.trim()) {
+      return (env[tokenRef.id] ?? process.env[tokenRef.id] ?? "").trim();
+    }
+    return "";
+  };
+
+  let selectedGithubToken = githubToken;
+  if (!selectedGithubToken && hasProfile) {
+    // Use the standard profile ordering so discovery respects auth.order and
+    // other auth-profile eligibility rules.
+    const orderedProfileIds = resolveAuthProfileOrder({
+      cfg: params.config,
+      store: authStore,
+      provider: "github-copilot",
+    });
+    const configuredOrder =
+      orderedProfileIds.length === 0
+        ? (findNormalizedProviderValue(params.config?.auth?.order, "github-copilot")?.filter(
+            (profileId) =>
+              resolveAuthProfileEligibility({
+                cfg: params.config,
+                store: authStore,
+                provider: "github-copilot",
+                profileId,
+              }).eligible,
+          ) ?? [])
+        : [];
+    const profileIds =
+      orderedProfileIds.length > 0
+        ? orderedProfileIds
+        : configuredOrder.length > 0
+          ? configuredOrder
+          : listProfilesForProvider(authStore, "github-copilot");
+    const profilesAlreadyEligible = profileIds === configuredOrder;
+    const seenProfileIds = new Set<string>();
+    for (const profileId of profileIds) {
+      if (seenProfileIds.has(profileId)) {
+        continue;
+      }
+      seenProfileIds.add(profileId);
+      if (
+        !profilesAlreadyEligible &&
+        !resolveAuthProfileEligibility({
+          cfg: params.config,
+          store: authStore,
+          provider: "github-copilot",
+          profileId,
+        }).eligible
+      ) {
+        continue;
+      }
+      selectedGithubToken = resolveCopilotTokenFromProfile(authStore.profiles[profileId]);
+      if (selectedGithubToken) {
+        break;
+      }
+    }
+    if (!selectedGithubToken && orderedProfileIds.length === 0 && configuredOrder.length > 0) {
+      for (const profileId of listProfilesForProvider(authStore, "github-copilot")) {
+        if (seenProfileIds.has(profileId)) {
+          continue;
+        }
+        if (
+          !resolveAuthProfileEligibility({
+            cfg: params.config,
+            store: authStore,
+            provider: "github-copilot",
+            profileId,
+          }).eligible
+        ) {
+          continue;
+        }
+        selectedGithubToken = resolveCopilotTokenFromProfile(authStore.profiles[profileId]);
+        if (selectedGithubToken) {
+          break;
+        }
+      }
+    }
+  }
+
+  let baseUrl = DEFAULT_COPILOT_API_BASE_URL;
+  if (selectedGithubToken) {
+    try {
+      const token = await resolveCopilotApiToken({
+        githubToken: selectedGithubToken,
+        env,
+      });
+      baseUrl = token.baseUrl;
+    } catch {
+      baseUrl = DEFAULT_COPILOT_API_BASE_URL;
+    }
+  }
+
+  // We deliberately do not write pi-coding-agent auth.json here.
+  // OpenClaw keeps auth in auth-profiles and resolves runtime availability from that store.
+
+  // We intentionally do NOT define custom models for Copilot in models.json.
+  // pi-coding-agent treats providers with models as replacements requiring apiKey.
+  // We only override baseUrl; the model list comes from pi-ai built-ins.
+  return {
+    baseUrl,
+    models: [],
+  } satisfies ProviderConfig;
+}
 export async function resolveImplicitBedrockProvider(params: {
   agentDir: string;
   config?: OpenClawConfig;
