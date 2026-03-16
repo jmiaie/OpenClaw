@@ -2505,6 +2505,7 @@ describe("broadcast dispatch", () => {
     await handleFeishuMessage({
       cfg,
       event,
+      botOpenId: "ou_known_bot",
       runtime: createRuntimeEnv(),
     });
 
