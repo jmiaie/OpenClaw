@@ -26,6 +26,8 @@ export async function updateSessionStoreAfterAgentRun(params: {
   defaultModel: string;
   fallbackProvider?: string;
   fallbackModel?: string;
+  /** True when the run was served by a fallback model rather than the configured primary. */
+  isFromFallback?: boolean;
   result: RunResult;
 }) {
   const {
@@ -38,6 +40,7 @@ export async function updateSessionStoreAfterAgentRun(params: {
     defaultModel,
     fallbackProvider,
     fallbackModel,
+    isFromFallback,
     result,
   } = params;
 
@@ -65,10 +68,16 @@ export async function updateSessionStoreAfterAgentRun(params: {
     updatedAt: Date.now(),
     contextTokens,
   };
-  setSessionRuntimeModel(next, {
-    provider: providerUsed,
-    model: modelUsed,
-  });
+  // Do not persist a fallback model as the session's runtime model. If we did,
+  // resolveSessionModelRef would return the fallback on every subsequent request
+  // and the configured primary model would never be retried after it recovers.
+  // The fallback is an in-flight transient choice, not a durable session setting.
+  if (!isFromFallback) {
+    setSessionRuntimeModel(next, {
+      provider: providerUsed,
+      model: modelUsed,
+    });
+  }
   if (isCliProvider(providerUsed, cfg)) {
     const cliSessionId = result.meta.agentMeta?.sessionId?.trim();
     if (cliSessionId) {
