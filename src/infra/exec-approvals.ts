@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { logWarn } from "../logger.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import { expandHomePrefix } from "./home-dir.js";
 import { requestJsonlSocket } from "./jsonl-socket.js";
 export * from "./exec-approvals-analysis.js";
 export * from "./exec-approvals-allowlist.js";
+
+const warnedLegacyAllowlistAgents = new Set<string>();
 
 export type ExecHost = "sandbox" | "gateway" | "node";
 export type ExecSecurity = "deny" | "allowlist" | "full";
@@ -111,8 +114,21 @@ export type ExecAllowlistEntry = {
   lastResolvedPath?: string;
 };
 
+/**
+ * Per-host allowlist map. Keys are exec host names ("sandbox", "gateway", "node")
+ * plus the reserved key "default" which applies when no host-specific entry exists.
+ *
+ * Legacy array format is treated as `{ "default": [...] }` at load time.
+ */
+export type ExecAllowlistByHost = Record<string, ExecAllowlistEntry[]>;
+
 export type ExecApprovalsAgent = ExecApprovalsDefaults & {
-  allowlist?: ExecAllowlistEntry[];
+  /**
+   * Allowlist entries for this agent.
+   * - Array: legacy format — treated as `{ "default": [...] }` (backward-compatible).
+   * - Object (ExecAllowlistByHost): per-host format. Keys: "sandbox", "gateway", "node", "default".
+   */
+  allowlist?: ExecAllowlistEntry[] | ExecAllowlistByHost;
 };
 
 export type ExecApprovalsFile = {
@@ -139,9 +155,26 @@ export type ExecApprovalsResolved = {
   token: string;
   defaults: Required<ExecApprovalsDefaults>;
   agent: Required<ExecApprovalsDefaults>;
+  /** Resolved allowlist for the default/legacy host. Use resolveAllowlistForHost() for per-host. */
   allowlist: ExecAllowlistEntry[];
+  /** Raw per-host allowlist map (null if agent uses legacy array format or no allowlist). */
+  allowlistByHost: ExecAllowlistByHost | null;
   file: ExecApprovalsFile;
 };
+
+/**
+ * Resolve the effective allowlist for a specific exec host.
+ * Falls back to "default" key, then to the flat allowlist (legacy).
+ */
+export function resolveAllowlistForHost(
+  resolved: ExecApprovalsResolved,
+  host: ExecHost,
+): ExecAllowlistEntry[] {
+  if (resolved.allowlistByHost) {
+    return resolved.allowlistByHost[host] ?? resolved.allowlistByHost["default"] ?? [];
+  }
+  return resolved.allowlist;
+}
 
 // Keep CLI + gateway defaults in sync.
 export const DEFAULT_EXEC_APPROVAL_TIMEOUT_MS = 120_000;
@@ -187,10 +220,12 @@ function mergeLegacyAgent(
     seen.add(key);
     allowlist.push(entry);
   };
-  for (const entry of current.allowlist ?? []) {
+  const currentEntries = Array.isArray(current.allowlist) ? current.allowlist : [];
+  const legacyEntries = Array.isArray(legacy.allowlist) ? legacy.allowlist : [];
+  for (const entry of currentEntries) {
     pushEntry(entry);
   }
-  for (const entry of legacy.allowlist ?? []) {
+  for (const entry of legacyEntries) {
     pushEntry(entry);
   }
 
@@ -256,6 +291,36 @@ function ensureAllowlistIds(
   return changed ? next : allowlist;
 }
 
+/**
+ * Detect whether an allowlist value is the per-host map format (object with string-array values).
+ * Returns false for arrays (legacy) and nullish.
+ */
+function isAllowlistByHost(value: unknown): value is ExecAllowlistByHost {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value as Record<string, unknown>).every((v) => Array.isArray(v))
+  );
+}
+
+/**
+ * Coerce and normalize per-host allowlist entries (ids, string→object, etc.).
+ */
+function normalizeAllowlistByHost(byHost: ExecAllowlistByHost): ExecAllowlistByHost {
+  const result: ExecAllowlistByHost = {};
+  let changed = false;
+  for (const [hostKey, entries] of Object.entries(byHost)) {
+    const coerced = coerceAllowlistEntries(entries);
+    const withIds = ensureAllowlistIds(coerced);
+    if (withIds !== entries) {
+      changed = true;
+    }
+    result[hostKey] = withIds ?? [];
+  }
+  return changed ? result : byHost;
+}
+
 export function normalizeExecApprovals(file: ExecApprovalsFile): ExecApprovalsFile {
   const socketPath = file.socket?.path?.trim();
   const token = file.socket?.token?.trim();
@@ -267,10 +332,25 @@ export function normalizeExecApprovals(file: ExecApprovalsFile): ExecApprovalsFi
     delete agents.default;
   }
   for (const [key, agent] of Object.entries(agents)) {
-    const coerced = coerceAllowlistEntries(agent.allowlist);
-    const allowlist = ensureAllowlistIds(coerced);
-    if (allowlist !== agent.allowlist) {
-      agents[key] = { ...agent, allowlist };
+    if (isAllowlistByHost(agent.allowlist)) {
+      // Per-host map format: normalize each host's entries.
+      const normalized = normalizeAllowlistByHost(agent.allowlist);
+      if (normalized !== agent.allowlist) {
+        agents[key] = { ...agent, allowlist: normalized };
+      }
+    } else {
+      // Legacy array format (or undefined): normalize as flat list.
+      if (Array.isArray(agent.allowlist) && !warnedLegacyAllowlistAgents.has(key)) {
+        warnedLegacyAllowlistAgents.add(key);
+        logWarn(
+          `exec-approvals: agent "${key}" uses legacy array allowlist format — run "openclaw doctor" to migrate`,
+        );
+      }
+      const coerced = coerceAllowlistEntries(agent.allowlist);
+      const allowlist = ensureAllowlistIds(coerced);
+      if (allowlist !== agent.allowlist) {
+        agents[key] = { ...agent, allowlist };
+      }
     }
   }
   const normalized: ExecApprovalsFile = {
@@ -464,10 +544,38 @@ export function resolveExecApprovalsFromFile(params: {
       agent.autoAllowSkills ?? wildcard.autoAllowSkills ?? resolvedDefaults.autoAllowSkills,
     ),
   };
-  const allowlist = [
-    ...(Array.isArray(wildcard.allowlist) ? wildcard.allowlist : []),
-    ...(Array.isArray(agent.allowlist) ? agent.allowlist : []),
-  ];
+  // Resolve flat allowlist (legacy path: wildcard + agent array entries merged).
+  const wildcardFlatList = Array.isArray(wildcard.allowlist) ? wildcard.allowlist : [];
+  const agentFlatList = Array.isArray(agent.allowlist) ? agent.allowlist : [];
+  const allowlist = [...wildcardFlatList, ...agentFlatList];
+
+  // Resolve per-host allowlist map (new format).
+  // If agent has a map format, build a merged map (wildcard flat entries go into "default").
+  let allowlistByHost: ExecAllowlistByHost | null = null;
+  const agentByHost = isAllowlistByHost(agent.allowlist) ? agent.allowlist : null;
+  const wildcardByHost = isAllowlistByHost(wildcard.allowlist) ? wildcard.allowlist : null;
+  if (agentByHost || wildcardByHost) {
+    const mergedHosts = new Set<string>([
+      ...Object.keys(agentByHost ?? {}),
+      ...Object.keys(wildcardByHost ?? {}),
+    ]);
+    allowlistByHost = {};
+    for (const hostKey of mergedHosts) {
+      const wildcardEntries = wildcardByHost?.[hostKey] ?? wildcardFlatList;
+      const agentEntries = agentByHost?.[hostKey] ?? [];
+      const seen = new Set<string>();
+      const merged: ExecAllowlistEntry[] = [];
+      for (const e of [...wildcardEntries, ...agentEntries]) {
+        const key = normalizeAllowlistPattern(e.pattern);
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          merged.push(e);
+        }
+      }
+      allowlistByHost[hostKey] = merged;
+    }
+  }
+
   return {
     path: params.path ?? resolveExecApprovalsPath(),
     socketPath: expandHomePrefix(
@@ -477,6 +585,7 @@ export function resolveExecApprovalsFromFile(params: {
     defaults: resolvedDefaults,
     agent: resolvedAgent,
     allowlist,
+    allowlistByHost,
     file,
   };
 }
@@ -501,12 +610,13 @@ export function recordAllowlistUse(
   entry: ExecAllowlistEntry,
   command: string,
   resolvedPath?: string,
+  host?: ExecHost,
 ) {
   const target = agentId ?? DEFAULT_AGENT_ID;
   const agents = approvals.agents ?? {};
   const existing = agents[target] ?? {};
-  const allowlist = Array.isArray(existing.allowlist) ? existing.allowlist : [];
-  const nextAllowlist = allowlist.map((item) =>
+
+  const updateEntry = (item: ExecAllowlistEntry) =>
     item.pattern === entry.pattern
       ? {
           ...item,
@@ -515,9 +625,22 @@ export function recordAllowlistUse(
           lastUsedCommand: command,
           lastResolvedPath: resolvedPath,
         }
-      : item,
-  );
-  agents[target] = { ...existing, allowlist: nextAllowlist };
+      : item;
+
+  if (isAllowlistByHost(existing.allowlist) && host) {
+    // Per-host map: update the specific host bucket (or "default" fallback).
+    const byHost = existing.allowlist;
+    const bucket = host && byHost[host] ? host : "default";
+    const entries = byHost[bucket] ?? [];
+    agents[target] = {
+      ...existing,
+      allowlist: { ...byHost, [bucket]: entries.map(updateEntry) },
+    };
+  } else {
+    const allowlist = Array.isArray(existing.allowlist) ? existing.allowlist : [];
+    agents[target] = { ...existing, allowlist: allowlist.map(updateEntry) };
+  }
+
   approvals.agents = agents;
   saveExecApprovals(approvals);
 }
@@ -526,20 +649,41 @@ export function addAllowlistEntry(
   approvals: ExecApprovalsFile,
   agentId: string | undefined,
   pattern: string,
+  host?: ExecHost,
 ) {
   const target = agentId ?? DEFAULT_AGENT_ID;
   const agents = approvals.agents ?? {};
   const existing = agents[target] ?? {};
-  const allowlist = Array.isArray(existing.allowlist) ? existing.allowlist : [];
   const trimmed = pattern.trim();
   if (!trimmed) {
     return;
   }
-  if (allowlist.some((entry) => entry.pattern === trimmed)) {
-    return;
+  const newEntry: ExecAllowlistEntry = {
+    id: crypto.randomUUID(),
+    pattern: trimmed,
+    lastUsedAt: Date.now(),
+  };
+
+  if (isAllowlistByHost(existing.allowlist) && host) {
+    // Per-host map: add to the specific host bucket.
+    const byHost = existing.allowlist;
+    const bucket = host;
+    const entries = byHost[bucket] ?? [];
+    if (entries.some((e) => e.pattern === trimmed)) {
+      return;
+    }
+    agents[target] = {
+      ...existing,
+      allowlist: { ...byHost, [bucket]: [...entries, newEntry] },
+    };
+  } else {
+    const allowlist = Array.isArray(existing.allowlist) ? existing.allowlist : [];
+    if (allowlist.some((entry) => entry.pattern === trimmed)) {
+      return;
+    }
+    agents[target] = { ...existing, allowlist: [...allowlist, newEntry] };
   }
-  allowlist.push({ id: crypto.randomUUID(), pattern: trimmed, lastUsedAt: Date.now() });
-  agents[target] = { ...existing, allowlist };
+
   approvals.agents = agents;
   saveExecApprovals(approvals);
 }

@@ -156,6 +156,7 @@ function resolveExecConfig(params: { cfg?: OpenClawConfig; agentId?: string }) {
     notifyOnExitEmptySuccess:
       agentExec?.notifyOnExitEmptySuccess ?? globalExec?.notifyOnExitEmptySuccess,
     applyPatch: agentExec?.applyPatch ?? globalExec?.applyPatch,
+    allowedHosts: agentExec?.allowedHosts ?? globalExec?.allowedHosts,
   };
 }
 
@@ -410,6 +411,7 @@ export function createOpenClawCodingTools(options?: {
   const execTool = createExecTool({
     ...execDefaults,
     host: options?.exec?.host ?? execConfig.host,
+    allowedHosts: execConfig.allowedHosts,
     security: options?.exec?.security ?? execConfig.security,
     ask: options?.exec?.ask ?? execConfig.ask,
     node: options?.exec?.node ?? execConfig.node,

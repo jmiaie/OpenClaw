@@ -147,7 +147,7 @@ function readExecApprovalPendingDetails(result: unknown): {
   approvalId: string;
   approvalSlug: string;
   expiresAtMs?: number;
-  host: "gateway" | "node";
+  host: "gateway" | "node" | "sandbox";
   command: string;
   cwd?: string;
   nodeId?: string;
