@@ -810,8 +810,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       quoteSender:
         dataMessage.quote?.authorNumber ??
         dataMessage.quote?.author ??
-        dataMessage.quote?.authorUuid ??
-        undefined,
+        dataMessage.quote?.authorUuid,
     });
   };
 }
