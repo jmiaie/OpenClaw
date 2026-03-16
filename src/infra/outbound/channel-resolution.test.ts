@@ -123,6 +123,7 @@ describe("outbound channel resolution", () => {
     expect(loadOpenClawPluginsMock).toHaveBeenCalledWith({
       config: { autoEnabled: true },
       workspaceDir: "/tmp/workspace",
+      inheritSharedRuntimeOptions: true,
     });
 
     getChannelPluginMock.mockReturnValue(undefined);
