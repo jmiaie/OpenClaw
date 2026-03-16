@@ -285,7 +285,7 @@ describe("web monitor inbox", () => {
       },
     ]);
 
-    // Verify it WAS NOT passed to onMessage
+    // Verify it WAS NOT passed to onMessage (old append messages are skipped)
     expect(onMessage).not.toHaveBeenCalled();
 
     await listener.close();

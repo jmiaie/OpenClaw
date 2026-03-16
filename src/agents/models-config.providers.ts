@@ -48,6 +48,8 @@ type SecretDefaults = {
   exec?: string;
 };
 
+const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+
 const MOONSHOT_NATIVE_BASE_URLS = new Set([
   "https://api.moonshot.ai/v1",
   "https://api.moonshot.cn/v1",
@@ -56,8 +58,6 @@ const MODELSTUDIO_NATIVE_BASE_URLS = new Set([
   "https://coding-intl.dashscope.aliyuncs.com/v1",
   "https://coding.dashscope.aliyuncs.com/v1",
 ]);
-
-const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 function normalizeApiKeyConfig(value: string): string {
   const trimmed = value.trim();
@@ -495,6 +495,36 @@ export function normalizeProviders(params: {
       }
       params.secretRefManagedProviders?.add(normalizedKey);
     } else if (typeof configuredApiKey === "string") {
+      // Reverse-lookup: if apiKey looks like a resolved secret value (not an env
+      // var name), check whether it matches the canonical env var for this provider.
+      // This prevents resolveConfigEnvVars()-resolved secrets from being persisted
+      // to models.json as plaintext. (Fixes #38757)
+      //
+      // SAFE APPROACH: Only perform the reverse-lookup if the apiKey in the
+      // original `sourceProviders` was an env var reference (SecretRef { source: "env" }).
+      // This prevents applying the lookup to manually entered secrets or already
+      // normalized env var names, thus avoiding the flip-flop bug and retaining
+      // security.
+      const originalProviderApiKey = params.sourceProviders?.[normalizedKey]?.apiKey;
+      const isOriginalEnvSecretRef =
+        originalProviderApiKey &&
+        typeof originalProviderApiKey === "object" &&
+        originalProviderApiKey.source === "env";
+      if (isOriginalEnvSecretRef) {
+        const currentApiKey = normalizedProvider.apiKey;
+        if (
+          typeof currentApiKey === "string" &&
+          currentApiKey.trim() &&
+          !ENV_VAR_NAME_RE.test(currentApiKey.trim())
+        ) {
+          const envVarName = resolveEnvApiKeyVarName(normalizedKey, env);
+          if (envVarName && env[envVarName] === currentApiKey) {
+            mutated = true;
+            normalizedProvider = { ...normalizedProvider, apiKey: envVarName };
+            params.secretRefManagedProviders?.add(normalizedKey);
+          }
+        }
+      }
       // Fix common misconfig: apiKey set to "${ENV_VAR}" instead of "ENV_VAR".
       const normalizedConfiguredApiKey = normalizeApiKeyConfig(configuredApiKey);
       if (normalizedConfiguredApiKey !== configuredApiKey) {
@@ -512,24 +542,6 @@ export function normalizeProviders(params: {
         profileApiKey.source !== "plaintext" &&
         normalizedConfiguredApiKey === profileApiKey.apiKey
       ) {
-        params.secretRefManagedProviders?.add(normalizedKey);
-      }
-    }
-
-    // Reverse-lookup: if apiKey looks like a resolved secret value (not an env
-    // var name), check whether it matches the canonical env var for this provider.
-    // This prevents resolveConfigEnvVars()-resolved secrets from being persisted
-    // to models.json as plaintext. (Fixes #38757)
-    const currentApiKey = normalizedProvider.apiKey;
-    if (
-      typeof currentApiKey === "string" &&
-      currentApiKey.trim() &&
-      !ENV_VAR_NAME_RE.test(currentApiKey.trim())
-    ) {
-      const envVarName = resolveEnvApiKeyVarName(normalizedKey, env);
-      if (envVarName && env[envVarName] === currentApiKey) {
-        mutated = true;
-        normalizedProvider = { ...normalizedProvider, apiKey: envVarName };
         params.secretRefManagedProviders?.add(normalizedKey);
       }
     }

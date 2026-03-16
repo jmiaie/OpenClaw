@@ -77,11 +77,13 @@ describe("normalizeProviders", () => {
       await fs.rm(agentDir, { recursive: true, force: true });
     }
   });
-  it("replaces resolved env var value with env var name to prevent plaintext persistence", async () => {
+  it("preserves resolved env var values to avoid flip-flop on successive normalizations", async () => {
+    // Previously, normalizeProviders would convert resolved values back to env var names,
+    // causing models.json to flip-flop. This test verifies the fix: resolved values
+    // are preserved, avoiding the flip-flop cycle.
     const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-agent-"));
     const original = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "sk-test-secret-value-12345"; // pragma: allowlist secret
-    const secretRefManagedProviders = new Set<string>();
     try {
       const providers: NonNullable<NonNullable<OpenClawConfig["models"]>["providers"]> = {
         openai: {
@@ -101,8 +103,50 @@ describe("normalizeProviders", () => {
           ],
         },
       };
-      const normalized = normalizeProviders({ providers, agentDir, secretRefManagedProviders });
-      expect(normalized?.openai?.apiKey).toBe("OPENAI_API_KEY");
+      const normalized = normalizeProviders({ providers, agentDir });
+      // Resolved values are preserved (no flip-flop)
+      expect(normalized?.openai?.apiKey).toBe("sk-test-secret-value-12345"); // pragma: allowlist secret
+    } finally {
+      if (original === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = original;
+      }
+      await fs.rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rewrites resolved env values when sourceProviders records the original env ref", async () => {
+    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-agent-"));
+    const original = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "sk-test-secret-value-12345"; // pragma: allowlist secret
+    try {
+      const providers: NonNullable<NonNullable<OpenClawConfig["models"]>["providers"]> = {
+        openai: {
+          baseUrl: "https://api.openai.com/v1",
+          apiKey: "sk-test-secret-value-12345", // pragma: allowlist secret
+          api: "openai-completions",
+          models: [],
+        },
+      };
+      const sourceProviders: NonNullable<NonNullable<OpenClawConfig["models"]>["providers"]> = {
+        openai: {
+          baseUrl: "https://api.openai.com/v1",
+          apiKey: { source: "env", provider: "default", id: "OPENAI_API_KEY" }, // pragma: allowlist secret
+          api: "openai-completions",
+          models: [],
+        },
+      };
+      const secretRefManagedProviders = new Set<string>();
+
+      const normalized = normalizeProviders({
+        providers,
+        agentDir,
+        sourceProviders,
+        secretRefManagedProviders,
+      });
+
+      expect(normalized?.openai?.apiKey).toBe("OPENAI_API_KEY"); // pragma: allowlist secret
       expect(secretRefManagedProviders.has("openai")).toBe(true);
     } finally {
       if (original === undefined) {
