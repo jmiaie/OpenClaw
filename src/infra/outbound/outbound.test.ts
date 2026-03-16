@@ -13,6 +13,7 @@ import {
   enqueueDelivery,
   failDelivery,
   loadPendingDeliveries,
+  MAX_RECOVERY_ENTRY_AGE_MS,
   MAX_RETRIES,
   moveToFailed,
   recoverPendingDeliveries,
@@ -232,6 +233,32 @@ describe("delivery-queue", () => {
       // Entry should be in failed/ directory.
       const failedDir = path.join(tmpDir, "delivery-queue", "failed");
       expect(fs.existsSync(path.join(failedDir, `${id}.json`))).toBe(true);
+    });
+    it("moves stale queued entries to failed without retrying them", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-14T07:00:00.000Z"));
+      const id = await enqueueDelivery(
+        { channel: "whatsapp", to: "+1", payloads: [{ text: "a" }] },
+        tmpDir,
+      );
+      vi.setSystemTime(new Date(Date.now() + MAX_RECOVERY_ENTRY_AGE_MS + 1));
+
+      const deliver = vi.fn();
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+      const result = await recoverPendingDeliveries({
+        deliver,
+        log,
+        cfg: baseCfg,
+        stateDir: tmpDir,
+        delay: noopDelay,
+      });
+
+      expect(deliver).not.toHaveBeenCalled();
+      expect(result).toEqual({ recovered: 0, failed: 0, skipped: 1 });
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("is stale"));
+      expect(fs.existsSync(path.join(tmpDir, "delivery-queue", "failed", `${id}.json`))).toBe(true);
+      vi.useRealTimers();
     });
 
     it("increments retryCount on failed recovery attempt", async () => {
