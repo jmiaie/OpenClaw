@@ -2,11 +2,23 @@ import { resolveGatewayPort } from "../config/config.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { HeartbeatEventPayload } from "../infra/heartbeat-events.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { runSecurityAudit } from "../security/audit.js";
 import type { HealthSummary } from "./health.js";
 import { scanStatus } from "./status.scan.js";
 
 type Tone = "ok" | "warn" | "muted";
+
+let providerUsagePromise: Promise<typeof import("../infra/provider-usage.js")> | undefined;
+let securityAuditModulePromise: Promise<typeof import("../security/audit.runtime.js")> | undefined;
+
+function loadProviderUsage() {
+  providerUsagePromise ??= import("../infra/provider-usage.js");
+  return providerUsagePromise;
+}
+
+function loadSecurityAuditModule() {
+  securityAuditModulePromise ??= import("../security/audit.runtime.js");
+  return securityAuditModulePromise;
+}
 
 function resolvePairingRecoveryContext(params: {
   error?: string | null;
@@ -56,28 +68,25 @@ export async function statusCommand(
     { json: opts.json, timeoutMs: opts.timeoutMs, all: opts.all },
     runtime,
   );
-  const securityAudit = ifJson(opts.json)
-    ? await runSecurityAudit({
+  const runSecurityAudit = async () =>
+    await loadSecurityAuditModule().then(({ runSecurityAudit }) =>
+      runSecurityAudit({
         config: scan.cfg,
         sourceConfig: scan.sourceConfig,
         deep: false,
         includeFilesystem: true,
         includeChannelSecurity: true,
-      })
+      }),
+    );
+  const securityAudit = ifJson(opts.json)
+    ? await runSecurityAudit()
     : await runWithProgress(
         {
           label: "Running security audit…",
           indeterminate: true,
           enabled: true,
         },
-        async () =>
-          await runSecurityAudit({
-            config: scan.cfg,
-            sourceConfig: scan.sourceConfig,
-            deep: false,
-            includeFilesystem: true,
-            includeChannelSecurity: true,
-          }),
+        async () => await runSecurityAudit(),
       );
   const {
     cfg,
@@ -110,7 +119,10 @@ export async function statusCommand(
           indeterminate: true,
           enabled: !ifJson(opts.json),
         },
-        async () => await loadUsageSummary({ timeoutMs: opts.timeoutMs }),
+        async () => {
+          const { loadProviderUsageSummary } = await loadProviderUsage();
+          return await loadProviderUsageSummary({ timeoutMs: opts.timeoutMs });
+        },
       )
     : undefined;
   const health: HealthSummary | undefined = opts.deep
@@ -196,7 +208,6 @@ export async function statusCommand(
     { buildGatewayConnectionDetails },
     { info },
     { formatTimeAgo },
-    { formatUsageReportLines },
     { formatGitInstallLabel },
     { resolveMemoryCacheSummary, resolveMemoryFtsState, resolveMemoryVectorState },
     { getTerminalTableWidth, renderTable },
@@ -213,7 +224,6 @@ export async function statusCommand(
     import("../gateway/call.js"),
     import("../globals.js"),
     import("../infra/format-time/format-relative.ts"),
-    import("../infra/provider-usage.js"),
     import("../infra/update-check.js"),
     import("../memory/status-format.js"),
     import("../terminal/table.js"),
@@ -670,6 +680,7 @@ export async function statusCommand(
   }
 
   if (usage) {
+    const { formatUsageReportLines } = await loadProviderUsage();
     runtime.log("");
     runtime.log(theme.heading("Usage"));
     for (const line of formatUsageReportLines(usage)) {
@@ -720,9 +731,4 @@ async function callGatewayJson<T>(params: {
 }): Promise<T> {
   const { callGateway } = await import("../gateway/call.js");
   return await callGateway<T>(params);
-}
-
-async function loadUsageSummary(params: { timeoutMs?: number }) {
-  const { loadProviderUsageSummary } = await import("../infra/provider-usage.js");
-  return await loadProviderUsageSummary(params);
 }
