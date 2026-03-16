@@ -86,6 +86,19 @@ const deliveryMocks = vi.hoisted(() => ({
 }));
 export const deliverReplies = deliveryMocks.deliverReplies;
 vi.mock("./bot/delivery.js", () => ({ deliverReplies: deliveryMocks.deliverReplies }));
+vi.mock("../../../src/acp/persistent-bindings.route.js", () => ({
+  ensureConfiguredAcpRouteReady: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock("./conversation-route.js", () => ({
+  resolveTelegramConversationRoute: vi.fn(() => ({
+    route: {
+      agentId: "main",
+      accountId: "default",
+      sessionKey: "telegram:default",
+    },
+    configuredBinding: null,
+  })),
+}));
 vi.mock("../../../src/pairing/pairing-store.js", () => ({
   readChannelAllowFromStore: vi.fn(async () => []),
 }));

@@ -2,25 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderPlugin, ProviderRuntimeModel } from "./types.js";
 
 type ResolvePluginProviders = typeof import("./providers.js").resolvePluginProviders;
-type ResolveNonBundledProviderPluginIds =
-  typeof import("./providers.js").resolveNonBundledProviderPluginIds;
 type ResolveOwningPluginIdsForProvider =
   typeof import("./providers.js").resolveOwningPluginIdsForProvider;
+type ResolveNonBundledProviderPluginIds =
+  typeof import("./providers.js").resolveNonBundledProviderPluginIds;
 
 const resolvePluginProvidersMock = vi.fn<ResolvePluginProviders>((_) => [] as ProviderPlugin[]);
-const resolveNonBundledProviderPluginIdsMock = vi.fn<ResolveNonBundledProviderPluginIds>(
-  (_) => [] as string[],
-);
 const resolveOwningPluginIdsForProviderMock = vi.fn<ResolveOwningPluginIdsForProvider>(
   (_) => undefined as string[] | undefined,
+);
+const resolveNonBundledProviderPluginIdsMock = vi.fn<ResolveNonBundledProviderPluginIds>(
+  (_) => [] as string[],
 );
 
 vi.mock("./providers.js", () => ({
   resolvePluginProviders: (params: unknown) => resolvePluginProvidersMock(params as never),
-  resolveNonBundledProviderPluginIds: (params: unknown) =>
-    resolveNonBundledProviderPluginIdsMock(params as never),
   resolveOwningPluginIdsForProvider: (params: unknown) =>
     resolveOwningPluginIdsForProviderMock(params as never),
+  resolveNonBundledProviderPluginIds: (params: unknown) =>
+    resolveNonBundledProviderPluginIdsMock(params as never),
 }));
 
 import {
@@ -41,11 +41,11 @@ import {
   normalizeProviderResolvedModelWithPlugin,
   prepareProviderDynamicModel,
   prepareProviderRuntimeAuth,
-  resetProviderRuntimeHookCacheForTest,
   refreshProviderOAuthCredentialWithPlugin,
   resolveProviderRuntimePlugin,
   runProviderDynamicModel,
   wrapProviderStreamFn,
+  resetProviderRuntimeHookCacheForTest,
 } from "./provider-runtime.js";
 
 const MODEL: ProviderRuntimeModel = {
@@ -66,10 +66,10 @@ describe("provider-runtime", () => {
     resetProviderRuntimeHookCacheForTest();
     resolvePluginProvidersMock.mockReset();
     resolvePluginProvidersMock.mockReturnValue([]);
-    resolveNonBundledProviderPluginIdsMock.mockReset();
-    resolveNonBundledProviderPluginIdsMock.mockReturnValue([]);
     resolveOwningPluginIdsForProviderMock.mockReset();
     resolveOwningPluginIdsForProviderMock.mockReturnValue(undefined);
+    resolveNonBundledProviderPluginIdsMock.mockReset();
+    resolveNonBundledProviderPluginIdsMock.mockReturnValue([]);
   });
 
   it("matches providers by alias for runtime hook lookup", () => {
@@ -113,11 +113,12 @@ describe("provider-runtime", () => {
   });
 
   it("dispatches runtime hooks for the matched provider", async () => {
-    resolveOwningPluginIdsForProviderMock.mockImplementation((params) => {
-      if (params.provider === "demo") {
+    resolveOwningPluginIdsForProviderMock.mockImplementation((params: unknown) => {
+      const provider = (params as { provider?: string }).provider;
+      if (provider === "demo") {
         return ["demo"];
       }
-      if (params.provider === "openai") {
+      if (provider === "openai") {
         return ["openai"];
       }
       return undefined;
@@ -198,7 +199,6 @@ describe("provider-runtime", () => {
         },
       ];
     });
-
     expect(
       runProviderDynamicModel({
         provider: "demo",
@@ -468,6 +468,18 @@ describe("provider-runtime", () => {
 
   it("resolves bundled catalog hooks without loading provider plugins", async () => {
     expect(
+      buildProviderMissingAuthMessageWithPlugin({
+        provider: "openai",
+        env: process.env,
+        context: {
+          env: process.env,
+          provider: "openai",
+          listProfileIds: (providerId) => (providerId === "openai-codex" ? ["p1"] : []),
+        },
+      }),
+    ).toContain("openai-codex/gpt-5.4");
+
+    expect(
       resolveProviderBuiltInModelSuppression({
         env: process.env,
         context: {
@@ -503,6 +515,7 @@ describe("provider-runtime", () => {
       },
     ]);
 
+    expect(resolveOwningPluginIdsForProviderMock).not.toHaveBeenCalled();
     expect(resolvePluginProvidersMock).not.toHaveBeenCalled();
   });
 });
