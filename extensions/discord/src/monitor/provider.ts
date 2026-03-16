@@ -1018,7 +1018,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
         await withTimeout(waitForMessageHandlerIdle(), idleTimeoutMs);
       } catch (error) {
         const message =
-          error instanceof Error && error.message === "timeout"
+          error instanceof Error && error.message === "timeout" // withTimeout rejects with Error("timeout")
             ? `discord: inbound handler did not drain within ${idleTimeoutMs}ms during teardown; continuing shutdown`
             : `discord: inbound handler idle wait failed during teardown: ${formatErrorMessage(error)}`;
         runtime.log?.(warn(message));

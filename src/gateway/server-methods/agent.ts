@@ -715,6 +715,8 @@ export const agentHandlers: GatewayRequestHandlers = {
     });
   },
   "agent.enqueue": async ({ req, params, respond, context, client, isWebchatConnect }) => {
+    // Queuing semantics are split to a follow-up change; for now enqueue shares
+    // the same immediate dispatch path as agent.run.
     await agentHandlers.agent({ req, params, respond, context, client, isWebchatConnect });
   },
   "agent.abort": ({ params, respond, context }) => {
