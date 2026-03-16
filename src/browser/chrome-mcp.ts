@@ -224,9 +224,9 @@ async function createRealSession(profileName: string): Promise<ChromeMcpSession>
     {},
   );
 
-  // Drain stderr so the child process never stalls on a full pipe and so that
-  // diagnostic output is available when the handshake fails.
-  const getStderr = drainStderr(transport);
+  // Mutable reference so the catch block can access stderr even when
+  // drainStderr is set up after connect() spawns the subprocess.
+  let getStderr: () => string = () => "";
 
   const ready = (async () => {
     try {
@@ -235,6 +235,8 @@ async function createRealSession(profileName: string): Promise<ChromeMcpSession>
       await Promise.race([
         (async () => {
           await client.connect(transport);
+          // transport.stderr is now guaranteed non-null; start draining.
+          getStderr = drainStderr(transport);
           const tools = await client.listTools();
           if (!tools.tools.some((tool) => tool.name === "list_pages")) {
             throw new Error("Chrome MCP server did not expose the expected navigation tools.");
