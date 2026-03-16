@@ -1,9 +1,9 @@
-import type { OpenClawConfig } from "../config/config.js";
-import { coerceSecretRef, resolveSecretInputRef } from "../config/types.secrets.js";
 import {
   DEFAULT_COPILOT_API_BASE_URL,
   resolveCopilotApiToken,
 } from "../../extensions/github-copilot/token.js";
+import type { OpenClawConfig } from "../config/config.js";
+import { coerceSecretRef, resolveSecretInputRef } from "../config/types.secrets.js";
 import { isRecord } from "../utils.js";
 import { normalizeOptionalSecretInput } from "../utils/normalize-secret-input.js";
 import {
@@ -40,7 +40,6 @@ import {
   runProviderCatalog,
 } from "../plugins/provider-discovery.js";
 import { resolveOwningPluginIdsForProvider, resolvePluginProviders } from "../plugins/providers.js";
-import { findNormalizedProviderValue } from "./model-selection.js";
 import {
   isNonSecretApiKeyMarker,
   resolveNonEnvSecretRefApiKeyMarker,
@@ -48,6 +47,7 @@ import {
   resolveEnvSecretRefHeaderValueMarker,
 } from "./model-auth-markers.js";
 import { resolveAwsSdkEnvVarName, resolveEnvApiKey } from "./model-auth.js";
+import { findNormalizedProviderValue } from "./model-selection.js";
 export { resolveOllamaApiBase } from "./models-config.providers.discovery.js";
 export { normalizeGoogleModelId };
 
