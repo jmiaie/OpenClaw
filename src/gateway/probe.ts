@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
+import net from "node:net";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { SystemPresence } from "../infra/system-presence.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { GatewayClient } from "./client.js";
 import { READ_SCOPE } from "./method-scopes.js";
-import { isLoopbackHost } from "./net.js";
 
 export type GatewayProbeAuth = {
   token?: string;
@@ -29,12 +29,28 @@ export type GatewayProbeResult = {
   configSnapshot: unknown;
 };
 
+function isLoopbackProbeHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized === "localhost" || normalized === "::1") {
+    return true;
+  }
+  if (normalized.startsWith("127.")) {
+    return true;
+  }
+  return net.isIP(normalized) === 6 && normalized.startsWith("::ffff:127.");
+}
+
 export async function probeGateway(opts: {
   url: string;
   auth?: GatewayProbeAuth;
   timeoutMs: number;
+  tlsFingerprint?: string;
   includeDetails?: boolean;
-  detailLevel?: "none" | "presence" | "full";
+  detailLevel?: "none" | "presence" | "health" | "full";
+  allowLoopbackDeviceIdentity?: boolean;
 }): Promise<GatewayProbeResult> {
   const startedAt = Date.now();
   const instanceId = randomUUID();
@@ -47,7 +63,11 @@ export async function probeGateway(opts: {
       const hostname = new URL(opts.url).hostname;
       // Local authenticated probes should stay device-bound so read/detail RPCs
       // are not scope-limited by the shared-auth scope stripping hardening.
-      return isLoopbackHost(hostname) && !(opts.auth?.token || opts.auth?.password);
+      return (
+        isLoopbackProbeHost(hostname) &&
+        !(opts.auth?.token || opts.auth?.password) &&
+        opts.allowLoopbackDeviceIdentity !== true
+      );
     } catch {
       return false;
     }
@@ -71,6 +91,7 @@ export async function probeGateway(opts: {
       url: opts.url,
       token: opts.auth?.token,
       password: opts.auth?.password,
+      tlsFingerprint: opts.tlsFingerprint,
       scopes: [READ_SCOPE],
       clientName: GATEWAY_CLIENT_NAMES.CLI,
       clientVersion: "dev",
@@ -109,6 +130,20 @@ export async function probeGateway(opts: {
               health: null,
               status: null,
               presence: Array.isArray(presence) ? (presence as SystemPresence[]) : null,
+              configSnapshot: null,
+            });
+            return;
+          }
+          if (detailLevel === "health") {
+            const health = await client.request("health");
+            settle({
+              ok: true,
+              connectLatencyMs,
+              error: null,
+              close,
+              health,
+              status: null,
+              presence: null,
               configSnapshot: null,
             });
             return;
