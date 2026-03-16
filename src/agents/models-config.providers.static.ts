@@ -14,6 +14,11 @@ import {
   BYTEPLUS_CODING_MODEL_CATALOG,
 } from "./byteplus-models.js";
 import {
+  buildClawApiModelDefinition,
+  CLAWAPI_BASE_URL,
+  CLAWAPI_MODEL_CATALOG,
+} from "./clawapi-models.js";
+import {
   buildDoubaoModelDefinition,
   DOUBAO_BASE_URL,
   DOUBAO_MODEL_CATALOG,
@@ -234,6 +239,14 @@ const NVIDIA_DEFAULT_COST = {
 };
 
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
+
+export function buildClawApiProvider(): ProviderConfig {
+  return {
+    baseUrl: CLAWAPI_BASE_URL,
+    api: "openai-completions",
+    models: CLAWAPI_MODEL_CATALOG.map(buildClawApiModelDefinition),
+  };
+}
 
 export function buildMinimaxProvider(): ProviderConfig {
   return {
