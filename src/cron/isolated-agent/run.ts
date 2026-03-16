@@ -227,6 +227,7 @@ export async function runCronIsolatedAgentTurn(params: {
   message: string;
   abortSignal?: AbortSignal;
   signal?: AbortSignal;
+  onExecutionStart?: () => void;
   sessionKey: string;
   agentId?: string;
   lane?: string;
@@ -595,6 +596,9 @@ export async function runCronIsolatedAgentTurn(params: {
             const cliSessionId = cronSession.isNewSession
               ? undefined
               : getCliSessionId(cronSession.sessionEntry, providerOverride);
+            // Signal execution start for CLI isolated runs so queue watchdog
+            // switches from the bounded queue-wait timeout to the full job timeout.
+            params.onExecutionStart?.();
             const result = await runCliAgent({
               sessionId: cronSession.sessionEntry.sessionId,
               sessionKey: agentSessionKey,
@@ -654,6 +658,7 @@ export async function runCronIsolatedAgentTurn(params: {
             disableMessageTool: toolPolicy.disableMessageTool,
             allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
             abortSignal,
+            onLaneAcquired: params.onExecutionStart,
             bootstrapPromptWarningSignaturesSeen,
             bootstrapPromptWarningSignature,
           });
