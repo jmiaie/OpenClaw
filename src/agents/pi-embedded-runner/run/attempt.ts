@@ -1946,10 +1946,12 @@ export async function runEmbeddedAttempt(
         params.modelId,
         {
           ...params.streamParams,
+          availableToolNames: allowedToolNames,
           fastMode: params.fastMode,
         },
         params.thinkLevel,
         sessionAgentId,
+        params.reasoningLevel,
       );
 
       if (cacheTrace) {
