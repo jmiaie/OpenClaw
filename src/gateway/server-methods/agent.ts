@@ -162,6 +162,8 @@ export const agentHandlers: GatewayRequestHandlers = {
     const request = p as {
       message: string;
       agentId?: string;
+      provider?: string;
+      model?: string;
       to?: string;
       replyTo?: string;
       sessionId?: string;
@@ -192,6 +194,8 @@ export const agentHandlers: GatewayRequestHandlers = {
       inputProvenance?: InputProvenance;
     };
     const senderIsOwner = resolveSenderIsOwnerFromClient(client);
+    const providerOverride = senderIsOwner ? request.provider : undefined;
+    const modelOverride = senderIsOwner ? request.model : undefined;
     const cfg = loadConfig();
     const idem = request.idempotencyKey;
     const normalizedSpawned = normalizeSpawnedRunMetadata({
@@ -584,6 +588,8 @@ export const agentHandlers: GatewayRequestHandlers = {
       ingressOpts: {
         message,
         images,
+        provider: providerOverride,
+        model: modelOverride,
         to: resolvedTo,
         sessionId: resolvedSessionId,
         sessionKey: resolvedSessionKey,

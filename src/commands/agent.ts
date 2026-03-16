@@ -32,6 +32,7 @@ import {
   modelKey,
   normalizeModelRef,
   normalizeProviderId,
+  parseModelRef,
   resolveConfiguredModelRef,
   resolveDefaultModelForAgent,
   resolveThinkingDefault,
@@ -937,7 +938,11 @@ async function agentCommandInternal(
     const hasStoredOverride = Boolean(
       sessionEntry?.modelOverride || sessionEntry?.providerOverride,
     );
-    const needsModelCatalog = hasAllowlist || hasStoredOverride;
+    const explicitProviderOverride =
+      typeof opts.provider === "string" ? opts.provider.trim() : undefined;
+    const explicitModelOverride = typeof opts.model === "string" ? opts.model.trim() : undefined;
+    const hasExplicitRunOverride = Boolean(explicitProviderOverride || explicitModelOverride);
+    const needsModelCatalog = hasAllowlist || hasStoredOverride || hasExplicitRunOverride;
     let allowedModelKeys = new Set<string>();
     let allowedModelCatalog: Awaited<ReturnType<typeof loadModelCatalog>> = [];
     let modelCatalog: Awaited<ReturnType<typeof loadModelCatalog>> | null = null;
@@ -999,6 +1004,30 @@ async function agentCommandInternal(
         provider = normalizedStored.provider;
         model = normalizedStored.model;
       }
+    }
+    if (hasExplicitRunOverride) {
+      const explicitRef = explicitModelOverride
+        ? explicitProviderOverride
+          ? normalizeModelRef(explicitProviderOverride, explicitModelOverride)
+          : parseModelRef(explicitModelOverride, provider)
+        : explicitProviderOverride
+          ? normalizeModelRef(explicitProviderOverride, model)
+          : null;
+      if (!explicitRef) {
+        throw new Error("Invalid model override.");
+      }
+      const explicitKey = modelKey(explicitRef.provider, explicitRef.model);
+      if (
+        !isCliProvider(explicitRef.provider, cfg) &&
+        !allowAnyModel &&
+        !allowedModelKeys.has(explicitKey)
+      ) {
+        throw new Error(
+          `Model override "${explicitRef.provider}/${explicitRef.model}" is not allowed for agent "${sessionAgentId}".`,
+        );
+      }
+      provider = explicitRef.provider;
+      model = explicitRef.model;
     }
     if (sessionEntry) {
       const authProfileId = sessionEntry.authProfileOverride;
