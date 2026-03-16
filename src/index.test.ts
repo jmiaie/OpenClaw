@@ -2,11 +2,21 @@ import fs from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const runtimeMocks = vi.hoisted(() => ({
+  installGaxiosFetchCompat: vi.fn(),
   runCli: vi.fn(async () => {}),
+  shouldInstallGaxiosFetchCompat: vi.fn(() => false),
 }));
 
 vi.mock("./cli/run-main.js", () => ({
   runCli: runtimeMocks.runCli,
+}));
+
+vi.mock("./infra/gaxios-fetch-compat.js", () => ({
+  installGaxiosFetchCompat: runtimeMocks.installGaxiosFetchCompat,
+}));
+
+vi.mock("./infra/node-version.js", () => ({
+  shouldInstallGaxiosFetchCompat: runtimeMocks.shouldInstallGaxiosFetchCompat,
 }));
 
 describe("legacy root entry", () => {
@@ -56,5 +66,23 @@ describe("legacy root entry", () => {
 
     expect(runtimeMocks.runCli).toHaveBeenCalledOnce();
     expect(runtimeMocks.runCli).toHaveBeenCalledWith(argv);
+  });
+
+  it("skips gaxios fetch compat on Node versions that do not need it", async () => {
+    runtimeMocks.shouldInstallGaxiosFetchCompat.mockReturnValueOnce(false);
+    const mod = await import("./index.js");
+
+    await mod.runLegacyCliEntry(["node", "dist/index.js", "status", "--json"]);
+
+    expect(runtimeMocks.installGaxiosFetchCompat).not.toHaveBeenCalled();
+  });
+
+  it("installs gaxios fetch compat when the runtime requires it", async () => {
+    runtimeMocks.shouldInstallGaxiosFetchCompat.mockReturnValueOnce(true);
+    const mod = await import("./index.js");
+
+    await mod.runLegacyCliEntry(["node", "dist/index.js", "status", "--json"]);
+
+    expect(runtimeMocks.installGaxiosFetchCompat).toHaveBeenCalledOnce();
   });
 });

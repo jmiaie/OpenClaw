@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const applyCliProfileEnvMock = vi.hoisted(() => vi.fn());
 const attachChildProcessBridgeMock = vi.hoisted(() => vi.fn());
+const installGaxiosFetchCompatMock = vi.hoisted(() => vi.fn());
 const installProcessWarningFilterMock = vi.hoisted(() => vi.fn());
 const isMainModuleMock = vi.hoisted(() => vi.fn(() => true));
 const isRootHelpInvocationMock = vi.hoisted(() => vi.fn(() => false));
@@ -11,6 +12,7 @@ const normalizeEnvMock = vi.hoisted(() => vi.fn());
 const normalizeWindowsArgvMock = vi.hoisted(() => vi.fn((argv: string[]) => argv));
 const parseCliProfileArgsMock = vi.hoisted(() => vi.fn((argv: string[]) => ({ ok: true, argv })));
 const resolveCommitHashMock = vi.hoisted(() => vi.fn<() => string | null>(() => "abc1234"));
+const shouldInstallGaxiosFetchCompatMock = vi.hoisted(() => vi.fn(() => false));
 const shouldSkipRespawnForArgvMock = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock("./cli/argv.js", () => ({
@@ -40,8 +42,16 @@ vi.mock("./infra/git-commit.js", () => ({
   resolveCommitHash: resolveCommitHashMock,
 }));
 
+vi.mock("./infra/gaxios-fetch-compat.js", () => ({
+  installGaxiosFetchCompat: installGaxiosFetchCompatMock,
+}));
+
 vi.mock("./infra/is-main.js", () => ({
   isMainModule: isMainModuleMock,
+}));
+
+vi.mock("./infra/node-version.js", () => ({
+  shouldInstallGaxiosFetchCompat: shouldInstallGaxiosFetchCompatMock,
 }));
 
 vi.mock("./infra/warning-filter.js", () => ({
@@ -100,5 +110,21 @@ describe("entry root version fast path", () => {
     });
 
     logSpy.mockRestore();
+  });
+
+  it("skips gaxios fetch compat during startup on Node 24", async () => {
+    shouldInstallGaxiosFetchCompatMock.mockReturnValueOnce(false);
+
+    await import("./entry.js");
+
+    expect(installGaxiosFetchCompatMock).not.toHaveBeenCalled();
+  });
+
+  it("installs gaxios fetch compat during startup on Node 25+", async () => {
+    shouldInstallGaxiosFetchCompatMock.mockReturnValueOnce(true);
+
+    await import("./entry.js");
+
+    expect(installGaxiosFetchCompatMock).toHaveBeenCalledOnce();
   });
 });
