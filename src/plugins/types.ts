@@ -1251,6 +1251,7 @@ export type PluginDiagnostic = {
 // ============================================================================
 
 export type PluginHookName =
+  | "before_agent_run"
   | "before_model_resolve"
   | "before_prompt_build"
   | "before_agent_start"
@@ -1278,6 +1279,7 @@ export type PluginHookName =
   | "gateway_stop";
 
 export const PLUGIN_HOOK_NAMES = [
+  "before_agent_run",
   "before_model_resolve",
   "before_prompt_build",
   "before_agent_start",
@@ -1338,6 +1340,19 @@ export type PluginHookAgentContext = {
   trigger?: string;
   /** Channel identifier (e.g. "telegram", "discord", "whatsapp"). */
   channelId?: string;
+};
+
+// before_agent_run hook
+export type PluginHookBeforeAgentRunEvent = {
+  /** The prompt that would be sent into the default agent run. */
+  prompt: string;
+};
+
+export type PluginHookBeforeAgentRunResult = {
+  /** Return true to skip the default agent run for this turn. */
+  skip?: boolean;
+  /** Optional diagnostic reason for logging. */
+  skipReason?: string;
 };
 
 // before_model_resolve hook
@@ -1750,6 +1765,10 @@ export type PluginHookGatewayStopEvent = {
 
 // Hook handler types mapped by hook name
 export type PluginHookHandlerMap = {
+  before_agent_run: (
+    event: PluginHookBeforeAgentRunEvent,
+    ctx: PluginHookAgentContext,
+  ) => Promise<PluginHookBeforeAgentRunResult | void> | PluginHookBeforeAgentRunResult | void;
   before_model_resolve: (
     event: PluginHookBeforeModelResolveEvent,
     ctx: PluginHookAgentContext,
