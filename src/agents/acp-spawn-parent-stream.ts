@@ -87,6 +87,7 @@ export function startAcpSpawnParentStreamRelay(params: {
 }): AcpSpawnParentRelayHandle {
   const runId = params.runId.trim();
   const parentSessionKey = params.parentSessionKey.trim();
+  const childSessionKey = params.childSessionKey.trim();
   if (!runId || !parentSessionKey) {
     return {
       dispose: () => {},
@@ -172,7 +173,7 @@ export function startAcpSpawnParentStreamRelay(params: {
       epochMs: Date.now(),
       runId,
       parentSessionKey,
-      childSessionKey: params.childSessionKey,
+      childSessionKey,
       agentId: params.agentId,
       kind,
       ...fields,
@@ -281,7 +282,14 @@ export function startAcpSpawnParentStreamRelay(params: {
   }
 
   const unsubscribe = onAgentEvent((event) => {
-    if (disposed || event.runId !== runId) {
+    const eventSessionKey =
+      typeof event.sessionKey === "string" && event.sessionKey.trim()
+        ? event.sessionKey.trim()
+        : undefined;
+    if (
+      disposed ||
+      (event.runId !== runId && (!eventSessionKey || eventSessionKey !== childSessionKey))
+    ) {
       return;
     }
 
