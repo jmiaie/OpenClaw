@@ -957,6 +957,7 @@ export async function runEmbeddedPiAgent(
             skillsSnapshot: params.skillsSnapshot,
             prompt,
             images: params.images,
+            suppressPromptImageDetection: params.suppressPromptImageDetection,
             disableTools: params.disableTools,
             provider,
             modelId,
@@ -1567,6 +1568,22 @@ export async function runEmbeddedPiAgent(
                 model: activeErrorContext.model,
                 profileId: lastProfileId,
                 status,
+                partialExecution: (() => {
+                  if (attempt.toolMetas.length === 0) {
+                    return undefined;
+                  }
+                  const sanitizedToolNames = FailoverError.sanitizeToolNames(
+                    attempt.toolMetas.map((t) => t.toolName),
+                  );
+                  if (sanitizedToolNames.length === 0) {
+                    return undefined;
+                  }
+                  return {
+                    hadToolExecution: true as const,
+                    toolNames: sanitizedToolNames,
+                    didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+                  };
+                })(),
               });
             }
             logAssistantFailoverDecision("surface_error");
