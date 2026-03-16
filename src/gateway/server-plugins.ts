@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { loadConfig } from "../config/config.js";
 import { loadOpenClawPlugins } from "../plugins/loader.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
+import {
+  clearSharedPluginRuntimeOptions,
+  getSharedPluginRuntimeOptions,
+  setSharedPluginRuntimeOptions,
+} from "../plugins/runtime/shared-runtime-options.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "./protocol/client-info.js";
 import type { ErrorShape } from "./protocol/index.js";
@@ -104,6 +109,18 @@ async function dispatchGatewayMethod<T>(
   return result.payload as T;
 }
 
+function resolvePluginSubagentIdempotencyKey(params: {
+  idempotencyKey?: string;
+  sessionKey: string;
+  method: "agent" | "agent.enqueue";
+}): string {
+  const provided = typeof params.idempotencyKey === "string" ? params.idempotencyKey.trim() : "";
+  if (provided) {
+    return provided;
+  }
+  return `plugin-subagent:${params.method}:${params.sessionKey}:${randomUUID()}`;
+}
+
 function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
   const getSessionMessages: PluginRuntime["subagent"]["getSessionMessages"] = async (params) => {
     const payload = await dispatchGatewayMethod<{ messages?: unknown[] }>("sessions.get", {
@@ -119,15 +136,45 @@ function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
         sessionKey: params.sessionKey,
         message: params.message,
         deliver: params.deliver ?? false,
+        idempotencyKey: resolvePluginSubagentIdempotencyKey({
+          idempotencyKey: params.idempotencyKey,
+          sessionKey: params.sessionKey,
+          method: "agent",
+        }),
         ...(params.extraSystemPrompt && { extraSystemPrompt: params.extraSystemPrompt }),
         ...(params.lane && { lane: params.lane }),
-        ...(params.idempotencyKey && { idempotencyKey: params.idempotencyKey }),
       });
       const runId = payload?.runId;
       if (typeof runId !== "string" || !runId) {
         throw new Error("Gateway agent method returned an invalid runId.");
       }
       return { runId };
+    },
+    async enqueue(params) {
+      const payload = await dispatchGatewayMethod<{ runId?: string }>("agent.enqueue", {
+        sessionKey: params.sessionKey,
+        message: params.message,
+        deliver: params.deliver ?? false,
+        idempotencyKey: resolvePluginSubagentIdempotencyKey({
+          idempotencyKey: params.idempotencyKey,
+          sessionKey: params.sessionKey,
+          method: "agent.enqueue",
+        }),
+        ...(params.extraSystemPrompt && { extraSystemPrompt: params.extraSystemPrompt }),
+        ...(params.lane && { lane: params.lane }),
+      });
+      const runId = payload?.runId;
+      if (typeof runId !== "string" || !runId) {
+        throw new Error("Gateway agent.enqueue method returned an invalid runId.");
+      }
+      return { runId };
+    },
+    async abort(params) {
+      const payload = await dispatchGatewayMethod<{ aborted?: boolean }>("agent.abort", {
+        runId: params.runId,
+        ...(params.sessionKey && { sessionKey: params.sessionKey }),
+      });
+      return { aborted: payload?.aborted === true };
     },
     async waitForRun(params) {
       const payload = await dispatchGatewayMethod<{ status?: string; error?: string }>(
@@ -175,21 +222,36 @@ export function loadGatewayPlugins(params: {
   preferSetupRuntimeForChannelPlugins?: boolean;
   logDiagnostics?: boolean;
 }) {
-  const pluginRegistry = loadOpenClawPlugins({
-    config: params.cfg,
-    workspaceDir: params.workspaceDir,
-    logger: {
-      info: (msg) => params.log.info(msg),
-      warn: (msg) => params.log.warn(msg),
-      error: (msg) => params.log.error(msg),
-      debug: (msg) => params.log.debug(msg),
-    },
-    coreGatewayHandlers: params.coreGatewayHandlers,
-    runtimeOptions: {
-      subagent: createGatewaySubagentRuntime(),
-    },
-    preferSetupRuntimeForChannelPlugins: params.preferSetupRuntimeForChannelPlugins,
+  const gatewaySubagentRuntime = createGatewaySubagentRuntime();
+  const previousSharedRuntimeOptions = getSharedPluginRuntimeOptions();
+  setSharedPluginRuntimeOptions({
+    subagent: gatewaySubagentRuntime,
   });
+  let pluginRegistry;
+  try {
+    pluginRegistry = loadOpenClawPlugins({
+      config: params.cfg,
+      workspaceDir: params.workspaceDir,
+      logger: {
+        info: (msg) => params.log.info(msg),
+        warn: (msg) => params.log.warn(msg),
+        error: (msg) => params.log.error(msg),
+        debug: (msg) => params.log.debug(msg),
+      },
+      coreGatewayHandlers: params.coreGatewayHandlers,
+      runtimeOptions: {
+        subagent: gatewaySubagentRuntime,
+      },
+      preferSetupRuntimeForChannelPlugins: params.preferSetupRuntimeForChannelPlugins,
+    });
+  } catch (error) {
+    if (previousSharedRuntimeOptions) {
+      setSharedPluginRuntimeOptions(previousSharedRuntimeOptions);
+    } else {
+      clearSharedPluginRuntimeOptions();
+    }
+    throw error;
+  }
   const pluginMethods = Object.keys(pluginRegistry.gatewayHandlers);
   const gatewayMethods = Array.from(new Set([...params.baseMethods, ...pluginMethods]));
   if ((params.logDiagnostics ?? true) && pluginRegistry.diagnostics.length > 0) {

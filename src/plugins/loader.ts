@@ -28,6 +28,10 @@ import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./
 import { resolvePluginCacheInputs } from "./roots.js";
 import { setActivePluginRegistry } from "./runtime.js";
 import type { CreatePluginRuntimeOptions } from "./runtime/index.js";
+import {
+  getPluginRuntimeCapabilityKey,
+  getSharedPluginRuntimeOptions,
+} from "./runtime/shared-runtime-options.js";
 import type { PluginRuntime } from "./runtime/types.js";
 import { validateJsonSchemaValue } from "./schema-validator.js";
 import type {
@@ -50,6 +54,8 @@ export type PluginLoadOptions = {
   logger?: PluginLogger;
   coreGatewayHandlers?: Record<string, GatewayRequestHandler>;
   runtimeOptions?: CreatePluginRuntimeOptions;
+  inheritSharedRuntimeOptions?: boolean;
+  activateGlobalHookRunner?: boolean;
   cache?: boolean;
   mode?: "full" | "validate";
   onlyPluginIds?: string[];
@@ -342,6 +348,7 @@ function buildCacheKey(params: {
   onlyPluginIds?: string[];
   includeSetupOnlyChannelPlugins?: boolean;
   preferSetupRuntimeForChannelPlugins?: boolean;
+  runtimeOptions?: CreatePluginRuntimeOptions;
 }): string {
   const { roots, loadPaths } = resolvePluginCacheInputs({
     workspaceDir: params.workspaceDir,
@@ -372,6 +379,7 @@ function buildCacheKey(params: {
     ...params.plugins,
     installs,
     loadPaths,
+    runtimeCapabilities: getPluginRuntimeCapabilityKey(params.runtimeOptions),
   })}::${scopeKey}::${setupOnlyKey}::${startupChannelMode}`;
 }
 
@@ -793,9 +801,15 @@ function warnAboutUntrackedLoadedPlugins(params: {
   }
 }
 
-function activatePluginRegistry(registry: PluginRegistry, cacheKey: string): void {
+function activatePluginRegistry(
+  registry: PluginRegistry,
+  cacheKey: string,
+  activateGlobalHookRunner: boolean,
+): void {
   setActivePluginRegistry(registry, cacheKey);
-  initializeGlobalHookRunner(registry);
+  if (activateGlobalHookRunner) {
+    initializeGlobalHookRunner(registry);
+  }
 }
 
 export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegistry {
@@ -818,6 +832,10 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   const includeSetupOnlyChannelPlugins = options.includeSetupOnlyChannelPlugins === true;
   const preferSetupRuntimeForChannelPlugins = options.preferSetupRuntimeForChannelPlugins === true;
   const shouldActivate = options.activate !== false;
+  const effectiveRuntimeOptions =
+    options.runtimeOptions ??
+    (options.inheritSharedRuntimeOptions ? getSharedPluginRuntimeOptions() : undefined);
+  const shouldActivateGlobalHookRunner = options.activateGlobalHookRunner !== false;
   // NOTE: `activate` is intentionally excluded from the cache key. All non-activating
   // (snapshot) callers pass `cache: false` via loadOnboardingPluginRegistry(), so they
   // never read from or write to the cache. Including `activate` here would be misleading
@@ -830,13 +848,14 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     onlyPluginIds,
     includeSetupOnlyChannelPlugins,
     preferSetupRuntimeForChannelPlugins,
+    runtimeOptions: effectiveRuntimeOptions,
   });
   const cacheEnabled = options.cache !== false;
   if (cacheEnabled) {
     const cached = getCachedPluginRegistry(cacheKey);
     if (cached) {
       if (shouldActivate) {
-        activatePluginRegistry(cached, cacheKey);
+        activatePluginRegistry(cached, cacheKey, shouldActivateGlobalHookRunner);
       }
       return cached;
     }
@@ -900,7 +919,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   // not eagerly load every channel/runtime dependency tree.
   let resolvedRuntime: PluginRuntime | null = null;
   const resolveRuntime = (): PluginRuntime => {
-    resolvedRuntime ??= resolveCreatePluginRuntime()(options.runtimeOptions);
+    resolvedRuntime ??= resolveCreatePluginRuntime()(effectiveRuntimeOptions);
     return resolvedRuntime;
   };
   const lazyRuntimeReflectionKeySet = new Set<PropertyKey>(LAZY_RUNTIME_REFLECTION_KEYS);
@@ -1352,7 +1371,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     setCachedPluginRegistry(cacheKey, registry);
   }
   if (shouldActivate) {
-    activatePluginRegistry(registry, cacheKey);
+    activatePluginRegistry(registry, cacheKey, shouldActivateGlobalHookRunner);
   }
   return registry;
 }
