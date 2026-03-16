@@ -135,6 +135,15 @@ const openRouterPlugin = {
         openAiCompatTurnValidation: false,
         geminiThoughtSignatureSanitization: true,
         geminiThoughtSignatureModelHints: ["gemini"],
+        transcriptToolCallIdModelHints: [
+          "mistral",
+          "mixtral",
+          "codestral",
+          "pixtral",
+          "devstral",
+          "ministral",
+          "mistralai",
+        ],
       },
       isModernModelRef: () => true,
       wrapStreamFn: (ctx) => {
