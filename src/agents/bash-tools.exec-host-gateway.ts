@@ -5,6 +5,7 @@ import {
   type ExecSecurity,
   buildEnforcedShellCommand,
   evaluateShellAllowlist,
+  evaluateShellDenylist,
   recordAllowlistUse,
   requiresExecApproval,
   resolveAllowAlwaysPatterns,
@@ -86,10 +87,20 @@ export async function processGatewayAllowlist(
     platform: process.platform,
     trustedSafeBinDirs: params.trustedSafeBinDirs,
   });
+  const denylistEval = evaluateShellDenylist({
+    command: params.command,
+    entries: approvals.denylist,
+    cwd: params.workdir,
+    env: params.env,
+    platform: process.platform,
+  });
   const allowlistMatches = allowlistEval.allowlistMatches;
   const analysisOk = allowlistEval.analysisOk;
-  const allowlistSatisfied =
-    hostSecurity === "allowlist" && analysisOk ? allowlistEval.allowlistSatisfied : false;
+  const allowlistSatisfied = analysisOk ? allowlistEval.allowlistSatisfied : false;
+  const denylistMatched =
+    denylistEval.analysisOk &&
+    denylistEval.denylistMatched &&
+    !(analysisOk && allowlistEval.allowlistSatisfied);
   let enforcedCommand: string | undefined;
   if (hostSecurity === "allowlist" && analysisOk && allowlistSatisfied) {
     const enforced = buildEnforcedShellCommand({
@@ -131,6 +142,7 @@ export async function processGatewayAllowlist(
       security: hostSecurity,
       analysisOk,
       allowlistSatisfied,
+      denylistMatched,
     }) ||
     requiresHeredocApproval ||
     obfuscation.detected;
@@ -220,11 +232,17 @@ export async function processGatewayAllowlist(
         } else {
           approvedByAsk = true;
         }
+      } else if (baseDecision.timedOut && askFallback === "denylist") {
+        if (denylistMatched) {
+          deniedReason = "approval-timeout (denylist-match)";
+        } else {
+          approvedByAsk = true;
+        }
       } else if (decision === "allow-once") {
         approvedByAsk = true;
       } else if (decision === "allow-always") {
         approvedByAsk = true;
-        if (hostSecurity === "allowlist") {
+        if (hostSecurity === "allowlist" || hostSecurity === "denylist") {
           const patterns = resolveAllowAlwaysPatterns({
             segments: allowlistEval.segments,
             cwd: params.workdir,
@@ -241,6 +259,8 @@ export async function processGatewayAllowlist(
 
       if (hostSecurity === "allowlist" && (!analysisOk || !allowlistSatisfied) && !approvedByAsk) {
         deniedReason = deniedReason ?? "allowlist-miss";
+      } else if (hostSecurity === "denylist" && denylistMatched && !approvedByAsk) {
+        deniedReason = deniedReason ?? "denylist-match";
       }
 
       if (deniedReason) {
@@ -311,6 +331,9 @@ export async function processGatewayAllowlist(
 
   if (hostSecurity === "allowlist" && (!analysisOk || !allowlistSatisfied)) {
     throw new Error("exec denied: allowlist miss");
+  }
+  if (hostSecurity === "denylist" && denylistMatched) {
+    throw new Error("exec denied: denylist match");
   }
 
   recordMatchedAllowlistUse(allowlistEval.segments[0]?.resolution?.resolvedPath);
