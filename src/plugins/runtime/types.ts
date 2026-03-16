@@ -85,13 +85,14 @@ export type PluginRuntime = PluginRuntimeCore & {
     getSession: (params: SubagentGetSessionParams) => Promise<SubagentGetSessionResult>;
     deleteSession: (params: SubagentDeleteSessionParams) => Promise<void>;
   };
-  outbound: {
     /**
      * Send payloads through the standard outbound delivery pipeline (chunking, hooks, queue).
      *
      * Note: when `bestEffort` is true and no `onError` callback is provided,
-     * per-payload delivery failures are silently swallowed and the returned
-     * results array may be shorter than the input payloads array.
+     * per-payload delivery failures are silently swallowed, the returned
+     * results array may be shorter than the input payloads array, and the
+     * write-ahead queue entry is still acknowledged as delivered — failed
+     * payloads will NOT be retried on crash recovery.
      */
     deliverOutboundPayloads: (
       params: PluginDeliverOutboundParams,
