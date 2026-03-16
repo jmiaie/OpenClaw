@@ -780,6 +780,7 @@ export const OpenClawSchema = z
                       })
                       .strict()
                       .optional(),
+                    toolResultMaxDataBytes: z.number().int().nonnegative().optional(),
                   })
                   .strict()
                   .optional(),
