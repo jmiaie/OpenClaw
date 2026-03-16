@@ -15,10 +15,6 @@ import {
   type StringSelectMenuInteraction,
 } from "@buape/carbon";
 import { ApplicationCommandOptionType, ButtonStyle } from "discord-api-types/v10";
-import {
-  ensureConfiguredAcpRouteReady,
-  resolveConfiguredAcpRoute,
-} from "../../../../src/acp/persistent-bindings.route.js";
 import { resolveHumanDelayConfig } from "../../../../src/agents/identity.js";
 import { resolveChunkMode, resolveTextChunkLimit } from "../../../../src/auto-reply/chunk.js";
 import type {
@@ -42,6 +38,10 @@ import { dispatchReplyWithDispatcher } from "../../../../src/auto-reply/reply/pr
 import type { ReplyPayload } from "../../../../src/auto-reply/types.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../../../../src/channels/command-gating.js";
 import { resolveNativeCommandSessionTargets } from "../../../../src/channels/native-command-session-targets.js";
+import {
+  ensureConfiguredAcpRouteReady,
+  resolveConfiguredAcpRoute,
+} from "../../../../src/channels/plugins/acp-routing.js";
 import { createReplyPrefixOptions } from "../../../../src/channels/reply-prefix.js";
 import type { OpenClawConfig, loadConfig } from "../../../../src/config/config.js";
 import { isDangerousNameMatchingEnabled } from "../../../../src/config/dangerous-name-matching.js";
@@ -192,6 +192,11 @@ function buildDiscordCommandOptions(params: {
       autocomplete,
     };
   }) satisfies CommandOptions;
+}
+
+function shouldBypassConfiguredAcpEnsure(commandName: string): boolean {
+  const normalized = commandName.trim().toLowerCase();
+  return normalized === "acp" || normalized === "new" || normalized === "reset";
 }
 
 function readDiscordCommandArgs(
@@ -1627,7 +1632,8 @@ async function dispatchDiscordCommandInteraction(params: {
         })
       : null;
   const configuredBinding = configuredRoute?.configuredBinding ?? null;
-  if (configuredBinding) {
+  const commandName = command.nativeName ?? command.key;
+  if (configuredBinding && !shouldBypassConfiguredAcpEnsure(commandName)) {
     const ensured = await ensureConfiguredAcpRouteReady({
       cfg,
       configuredBinding,

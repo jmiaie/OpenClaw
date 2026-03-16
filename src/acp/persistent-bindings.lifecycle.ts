@@ -16,6 +16,10 @@ function sessionMatchesConfiguredBinding(params: {
   spec: ConfiguredAcpBindingSpec;
   meta: SessionAcpMeta;
 }): boolean {
+  if (params.meta.state === "error") {
+    return false;
+  }
+
   const desiredAgent = (params.spec.acpAgentId ?? params.spec.agentId).trim().toLowerCase();
   const currentAgent = (params.meta.agent ?? "").trim().toLowerCase();
   if (!currentAgent || currentAgent !== desiredAgent) {
@@ -119,15 +123,15 @@ export async function resetAcpSessionInPlace(params: {
     };
   }
 
-  const configuredBinding = resolveConfiguredAcpBindingSpecBySessionKey({
-    cfg: params.cfg,
-    sessionKey,
-  });
   const meta = readAcpSessionEntry({
     cfg: params.cfg,
     sessionKey,
   })?.acp;
   if (!meta) {
+    const configuredBinding = resolveConfiguredAcpBindingSpecBySessionKey({
+      cfg: params.cfg,
+      sessionKey,
+    });
     if (configuredBinding) {
       const ensured = await ensureConfiguredAcpBindingSession({
         cfg: params.cfg,
@@ -148,11 +152,7 @@ export async function resetAcpSessionInPlace(params: {
   }
 
   const acpManager = getAcpSessionManager();
-  const agent =
-    normalizeText(meta.agent) ??
-    configuredBinding?.acpAgentId ??
-    configuredBinding?.agentId ??
-    resolveAcpAgentFromSessionKey(sessionKey, "main");
+  const agent = normalizeText(meta.agent) ?? resolveAcpAgentFromSessionKey(sessionKey, "main");
   const mode = meta.mode === "oneshot" ? "oneshot" : "persistent";
   const runtimeOptions = { ...meta.runtimeOptions };
   const cwd = normalizeText(runtimeOptions.cwd ?? meta.cwd);
