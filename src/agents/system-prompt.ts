@@ -233,6 +233,8 @@ export function buildAgentSystemPrompt(params: {
     channel: string;
   };
   memoryCitationsMode?: MemoryCitationsMode;
+  /** Custom preamble (replaces default "You are a personal assistant running inside OpenClaw."). */
+  preamble?: string;
 }) {
   const acpEnabled = params.acpEnabled !== false;
   const sandboxedRuntime = params.sandboxInfo?.enabled === true;
@@ -414,13 +416,19 @@ export function buildAgentSystemPrompt(params: {
   });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
+  const trimmedPreamble = params.preamble?.trim();
+  const preamble =
+    trimmedPreamble !== undefined && trimmedPreamble.length > 0
+      ? trimmedPreamble
+      : "You are a personal assistant running inside OpenClaw.";
+
   // For "none" mode, return just the basic identity line
   if (promptMode === "none") {
-    return "You are a personal assistant running inside OpenClaw.";
+    return preamble;
   }
 
   const lines = [
-    "You are a personal assistant running inside OpenClaw.",
+    preamble,
     "",
     "## Tooling",
     "Tool availability (filtered by policy):",
