@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleSendChat, refreshChatAvatar, type ChatHost } from "./app-chat.ts";
+import { handleSendChat, refreshChat, refreshChatAvatar, type ChatHost } from "./app-chat.ts";
 
 function makeHost(overrides?: Partial<ChatHost>): ChatHost {
   return {
@@ -126,6 +126,209 @@ describe("handleSendChat", () => {
     expect(host.chatModelOverrides.main).toEqual({
       kind: "qualified",
       value: "openai/gpt-5-mini",
+    });
+  });
+});
+
+describe("refreshChat", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("switches away from a missing direct session and reloads chat state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({}),
+      }) as unknown as typeof fetch,
+    );
+    const applySettings = vi.fn();
+    const loadAssistantIdentity = vi.fn(async () => {});
+    const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === "chat.history") {
+        return {
+          messages: [
+            {
+              role: "assistant",
+              text: `history:${String(params?.sessionKey)}`,
+            },
+          ],
+          thinkingLevel: null,
+        };
+      }
+      if (method === "sessions.list") {
+        return {
+          ts: 0,
+          path: "",
+          count: 1,
+          defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+          sessions: [{ key: "main", kind: "direct", updatedAt: null }],
+        };
+      }
+      if (method === "models.list") {
+        return { models: [] };
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const host = makeHost({
+      client: { request } as unknown as ChatHost["client"],
+      sessionKey: "agent:main:discord:channel:123",
+      chatMessage: "draft",
+      chatAttachments: [{ id: "a1", dataUrl: "data:image/png;base64,abc", mimeType: "image/png" }],
+      chatQueue: [{ id: "q1", text: "queued", createdAt: 1 }],
+      chatRunId: "run-1",
+      chatStream: "stale",
+      settings: {
+        gatewayUrl: "",
+        token: "",
+        sessionKey: "agent:main:discord:channel:123",
+        lastActiveSessionKey: "agent:main:discord:channel:123",
+        theme: "claw",
+        themeMode: "dark",
+        chatFocusMode: false,
+        chatShowThinking: true,
+        chatShowToolCalls: true,
+        splitRatio: 0.6,
+        navCollapsed: false,
+        navWidth: 280,
+        navGroupsCollapsed: {},
+      },
+      applySettings,
+      loadAssistantIdentity,
+    });
+
+    await refreshChat(host, { scheduleScroll: false });
+
+    expect(host.sessionKey).toBe("main");
+    expect(host.chatMessage).toBe("");
+    expect(host.chatAttachments).toEqual([]);
+    expect(host.chatQueue).toEqual([]);
+    expect(host.chatRunId).toBeNull();
+    expect(host.chatStream).toBeNull();
+    expect(host.chatMessages).toEqual([
+      {
+        role: "assistant",
+        text: "history:main",
+      },
+    ]);
+    expect(applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "main",
+        lastActiveSessionKey: "main",
+      }),
+    );
+    expect(loadAssistantIdentity).toHaveBeenCalled();
+    expect(request).toHaveBeenNthCalledWith(1, "chat.history", {
+      sessionKey: "agent:main:discord:channel:123",
+      limit: 200,
+    });
+    expect(request).toHaveBeenCalledWith("chat.history", {
+      sessionKey: "main",
+      limit: 200,
+    });
+  });
+
+  it("uses a fresh sessions snapshot before falling back when sessions are already loading", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({}),
+      }) as unknown as typeof fetch,
+    );
+    const applySettings = vi.fn();
+    const loadAssistantIdentity = vi.fn(async () => {});
+    const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === "chat.history") {
+        return {
+          messages: [
+            {
+              role: "assistant",
+              text: `history:${String(params?.sessionKey)}`,
+            },
+          ],
+          thinkingLevel: null,
+        };
+      }
+      if (method === "sessions.list") {
+        return {
+          ts: 0,
+          path: "",
+          count: 1,
+          defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+          sessions: [
+            { key: "agent:main:discord:channel:123", kind: "direct", updatedAt: null },
+            { key: "main", kind: "direct", updatedAt: null },
+          ],
+        };
+      }
+      if (method === "models.list") {
+        return { models: [] };
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const host = makeHost({
+      client: { request } as unknown as ChatHost["client"],
+      sessionKey: "agent:main:discord:channel:123",
+      chatMessage: "draft",
+      settings: {
+        gatewayUrl: "",
+        token: "",
+        sessionKey: "agent:main:discord:channel:123",
+        lastActiveSessionKey: "agent:main:discord:channel:123",
+        theme: "claw",
+        themeMode: "dark",
+        chatFocusMode: false,
+        chatShowThinking: true,
+        chatShowToolCalls: true,
+        splitRatio: 0.6,
+        navCollapsed: false,
+        navWidth: 280,
+        navGroupsCollapsed: {},
+      },
+      applySettings,
+      loadAssistantIdentity,
+    }) as ChatHost & {
+      sessionsLoading: boolean;
+      sessionsResult: unknown;
+      chatSessionsResult?: unknown;
+    };
+    host.sessionsLoading = true;
+    host.sessionsResult = {
+      ts: 0,
+      path: "",
+      count: 1,
+      defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+      sessions: [{ key: "main", kind: "direct", updatedAt: null }],
+    };
+
+    await refreshChat(host, { scheduleScroll: false });
+
+    expect(host.sessionKey).toBe("agent:main:discord:channel:123");
+    expect(host.chatMessage).toBe("draft");
+    expect(host.chatMessages).toEqual([
+      {
+        role: "assistant",
+        text: "history:agent:main:discord:channel:123",
+      },
+    ]);
+    expect(host.sessionsResult).toEqual({
+      ts: 0,
+      path: "",
+      count: 1,
+      defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+      sessions: [
+        { key: "agent:main:discord:channel:123", kind: "direct", updatedAt: null },
+        { key: "main", kind: "direct", updatedAt: null },
+      ],
+    });
+    expect(host.chatSessionsResult).toEqual(host.sessionsResult);
+    expect(applySettings).not.toHaveBeenCalled();
+    expect(loadAssistantIdentity).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith("sessions.list", {
+      includeGlobal: true,
+      includeUnknown: true,
     });
   });
 });
