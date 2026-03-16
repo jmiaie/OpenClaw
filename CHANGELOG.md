@@ -31,6 +31,7 @@ Docs: https://docs.openclaw.ai
 ### Breaking
 
 - Browser/Chrome MCP: remove the legacy Chrome extension relay path, bundled extension assets, `driver: "extension"`, and `browser.relayBindHost`. Run `openclaw doctor --fix` to migrate host-local browser config to `existing-session` / `user`; Docker, headless, sandbox, and remote browser flows still use raw CDP. Thanks @vincentkoc.
+- Auth/Vertex AI: recognize `GOOGLE_CLOUD_API_KEY` for the `google-vertex` provider so `models auth` status, secret scrubbing, and env-var detection work without relying solely on gcloud ADC. (#45876)
 
 ### Fixes
 
