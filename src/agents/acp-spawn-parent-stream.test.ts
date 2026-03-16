@@ -131,6 +131,38 @@ describe("startAcpSpawnParentStreamRelay", () => {
     relay.dispose();
   });
 
+  it("relays early runtime errors matched by child session key before the final runId is known", () => {
+    const relay = startAcpSpawnParentStreamRelay({
+      runId: "idempotency-key",
+      parentSessionKey: "agent:main:main",
+      childSessionKey: "agent:codex:acp:child-early-error",
+      agentId: "codex",
+      streamFlushMs: 1,
+      noOutputNoticeMs: 120_000,
+    });
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-early-error",
+      stream: "lifecycle",
+      data: {
+        phase: "error",
+        error: "ACP_TURN_FAILED",
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run failed: ACP_TURN_FAILED"))).toBe(
+      true,
+    );
+    expect(requestHeartbeatNowMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "acp:spawn:stream",
+        sessionKey: "agent:main:main",
+      }),
+    );
+    relay.dispose();
+  });
+
   it("auto-disposes stale relays after max lifetime timeout", () => {
     const relay = startAcpSpawnParentStreamRelay({
       runId: "run-3",
