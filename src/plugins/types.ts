@@ -1183,6 +1183,9 @@ export type OpenClawPluginModule =
   | ((api: OpenClawPluginApi) => void | Promise<void>);
 
 export type PluginRegistrationMode = "full" | "setup-only" | "setup-runtime";
+export type PluginResetSessionResult =
+  | { ok: true; key: string; sessionId: string }
+  | { ok: false; key: string; error: string };
 
 export type OpenClawPluginApi = {
   id: string;
@@ -1224,6 +1227,7 @@ export type OpenClawPluginApi = {
     id: string,
     factory: import("../context-engine/registry.js").ContextEngineFactory,
   ) => void;
+  resetSession?: (key: string, reason?: "new" | "reset") => Promise<PluginResetSessionResult>;
   resolvePath: (input: string) => string;
   /** Register a lifecycle hook handler */
   on: <K extends PluginHookName>(
