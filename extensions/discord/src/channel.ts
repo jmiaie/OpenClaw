@@ -1,12 +1,13 @@
 import { Separator, TextDisplay } from "@buape/carbon";
-import { createScopedChannelConfigBase } from "openclaw/plugin-sdk/compat";
 import {
   buildAccountScopedAllowlistConfigEditor,
   buildAccountScopedDmSecurityPolicy,
   collectOpenProviderGroupPolicyWarnings,
   collectOpenGroupPolicyConfiguredRouteWarnings,
+  createScopedChannelConfigBase,
   createScopedAccountConfigAccessors,
   formatAllowFromLowercase,
+  resolveOutboundSendDep,
 } from "openclaw/plugin-sdk/compat";
 import {
   buildAgentSessionKey,
@@ -31,7 +32,11 @@ import {
   type ChannelPlugin,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/discord";
-import { resolveOutboundSendDep } from "../../../src/infra/outbound/send-deps.js";
+import {
+  buildAgentSessionKey,
+  resolveThreadSessionKeys,
+  type RoutePeer,
+} from "openclaw/plugin-sdk/routing";
 import { normalizeMessageChannel } from "../../../src/utils/message-channel.js";
 import { inspectDiscordAccount } from "./account-inspect.js";
 import {

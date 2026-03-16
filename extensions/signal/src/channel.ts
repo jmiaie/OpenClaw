@@ -1,4 +1,5 @@
 import {
+  resolveOutboundSendDep,
   buildAccountScopedAllowlistConfigEditor,
   buildAccountScopedDmSecurityPolicy,
   createScopedAccountConfigAccessors,
@@ -26,7 +27,6 @@ import {
 } from "openclaw/plugin-sdk/signal";
 import { resolveTextChunkLimit } from "../../../src/auto-reply/chunk.js";
 import { resolveMarkdownTableMode } from "../../../src/config/markdown-tables.js";
-import { resolveOutboundSendDep } from "../../../src/infra/outbound/send-deps.js";
 import {
   listSignalAccountIds,
   resolveDefaultSignalAccountId,
