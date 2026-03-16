@@ -5,6 +5,7 @@ import {
   type ProviderResolveDynamicModelContext,
   type ProviderRuntimeModel,
 } from "openclaw/plugin-sdk/core";
+import { buildOauthProviderAuthResult } from "../../src/plugin-sdk/provider-auth-result.js";
 import {
   CLAUDE_CLI_PROFILE_ID,
   listProfilesForProvider,
@@ -15,6 +16,7 @@ import type { AuthProfileStore } from "../../src/agents/auth-profiles/types.js";
 import { normalizeModelCompat } from "../../src/agents/model-compat.js";
 import { formatCliCommand } from "../../src/cli/command-format.js";
 import { parseDurationMs } from "../../src/cli/parse-duration.js";
+import { loginAnthropicOAuth } from "../../src/commands/anthropic-oauth.js";
 import {
   normalizeSecretInputModeInput,
   promptSecretRefForSetup,
@@ -309,6 +311,33 @@ async function runAnthropicSetupTokenNonInteractive(ctx: {
   });
 }
 
+async function runAnthropicOAuth(ctx: ProviderAuthContext): Promise<ProviderAuthResult> {
+  let creds;
+  try {
+    creds = await loginAnthropicOAuth({
+      prompter: ctx.prompter,
+      runtime: ctx.runtime,
+      isRemote: ctx.isRemote,
+      openUrl: ctx.openUrl,
+      localBrowserMessage: "Complete sign-in in browser…",
+    });
+  } catch {
+    return { profiles: [] };
+  }
+  if (!creds) {
+    return { profiles: [] };
+  }
+
+  return buildOauthProviderAuthResult({
+    providerId: PROVIDER_ID,
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    access: creds.access,
+    refresh: creds.refresh,
+    expires: creds.expires,
+    email: typeof creds.email === "string" ? creds.email : undefined,
+  });
+}
+
 const anthropicPlugin = {
   id: PROVIDER_ID,
   name: "Anthropic Provider",
@@ -323,6 +352,26 @@ const anthropicPlugin = {
       deprecatedProfileIds: [CLAUDE_CLI_PROFILE_ID],
       auth: [
         {
+          id: "oauth",
+          label: "Anthropic OAuth (Claude Pro/Max)",
+          hint: "Browser sign-in",
+          kind: "oauth",
+          wizard: {
+            choiceId: "oauth",
+            choiceLabel: "Anthropic OAuth (Claude Pro/Max)",
+            choiceHint: "Browser sign-in",
+            groupId: "anthropic",
+            groupLabel: "Anthropic",
+            groupHint: "OAuth + setup-token + API key",
+            modelAllowlist: {
+              allowedKeys: [...ANTHROPIC_OAUTH_ALLOWLIST],
+              initialSelections: ["anthropic/claude-sonnet-4-6"],
+              message: "Anthropic OAuth models",
+            },
+          },
+          run: async (ctx: ProviderAuthContext) => await runAnthropicOAuth(ctx),
+        },
+        {
           id: "setup-token",
           label: "setup-token (claude)",
           hint: "Paste a setup-token from `claude setup-token`",
@@ -333,7 +382,7 @@ const anthropicPlugin = {
             choiceHint: "Run `claude setup-token` elsewhere, then paste the token here",
             groupId: "anthropic",
             groupLabel: "Anthropic",
-            groupHint: "setup-token + API key",
+            groupHint: "OAuth + setup-token + API key",
             modelAllowlist: {
               allowedKeys: [...ANTHROPIC_OAUTH_ALLOWLIST],
               initialSelections: ["anthropic/claude-sonnet-4-6"],
@@ -365,7 +414,7 @@ const anthropicPlugin = {
             choiceLabel: "Anthropic API key",
             groupId: "anthropic",
             groupLabel: "Anthropic",
-            groupHint: "setup-token + API key",
+            groupHint: "OAuth + setup-token + API key",
           },
         }),
       ],
