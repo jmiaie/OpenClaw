@@ -76,7 +76,9 @@ export function detectChangedExtensionIds(changedPaths) {
 
     const extensionMatch = relativePath.match(/^extensions\/([^/]+)(?:\/|$)/);
     if (extensionMatch) {
-      extensionIds.add(extensionMatch[1]);
+      if (hasExtensionPackage(extensionMatch[1])) {
+        extensionIds.add(extensionMatch[1]);
+      }
       continue;
     }
 
