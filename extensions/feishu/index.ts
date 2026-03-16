@@ -64,6 +64,7 @@ const plugin = {
     registerFeishuDriveTools(api);
     registerFeishuPermTools(api);
     registerFeishuBitableTools(api);
+    registerFeishuSubagentHooks(api);
   },
 };
 
