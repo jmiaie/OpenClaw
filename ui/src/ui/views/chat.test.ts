@@ -27,8 +27,18 @@ function createChatHeaderState(
     omitSessionFromList?: boolean;
   } = {},
 ): { state: AppViewState; request: ReturnType<typeof vi.fn> } {
-  let currentModel = overrides.model ?? null;
-  let currentModelProvider = currentModel ? "openai" : null;
+  let currentModel: string | null = null;
+  let currentModelProvider: string | null = null;
+  const initialModel = overrides.model ?? null;
+  if (initialModel) {
+    const slashIndex = initialModel.indexOf("/");
+    if (slashIndex > 0) {
+      currentModelProvider = initialModel.slice(0, slashIndex);
+      currentModel = initialModel.slice(slashIndex + 1);
+    } else {
+      currentModel = initialModel;
+    }
+  }
   const omitSessionFromList = overrides.omitSessionFromList ?? false;
   const catalog = overrides.models ?? [
     { id: "gpt-5", name: "GPT-5", provider: "openai" },
@@ -623,7 +633,7 @@ describe("chat view", () => {
         ok: false,
       } satisfies Partial<Response>),
     );
-    const { state, request } = createChatHeaderState({ model: "gpt-5-mini" });
+    const { state, request } = createChatHeaderState({ model: "openai/gpt-5-mini" });
     const container = document.createElement("div");
     render(renderChatSessionSelect(state), container);
 
