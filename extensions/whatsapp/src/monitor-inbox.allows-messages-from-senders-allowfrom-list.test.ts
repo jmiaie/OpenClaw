@@ -254,6 +254,7 @@ describe("web monitor inbox", () => {
 
   it("handles append messages by marking them read but skipping auto-reply", async () => {
     const { onMessage, listener, sock } = await openInboxMonitor();
+    const staleTs = Math.floor(Date.now() / 1000) - 300;
 
     // Stale append (older than 60s before connect): mark read but skip onMessage per #20952
     const staleTs = nowSeconds(-120_000);
