@@ -4,7 +4,7 @@ import {
   replaceRuntimeAuthProfileStoreSnapshots,
 } from "../../agents/auth-profiles/store.js";
 import { QWEN_OAUTH_MARKER } from "../../agents/model-auth-markers.js";
-import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types.models.js";
+import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { createCapturedPluginRegistration } from "../../test-utils/plugin-registration.js";
 import { runProviderCatalog } from "../provider-discovery.js";
 import type { OpenClawPluginApi, ProviderPlugin } from "../types.js";
@@ -59,35 +59,22 @@ function requireProvider(providers: ProviderPlugin[], providerId: string) {
   return provider;
 }
 
-function createModelDefinition(id: string, name = id): ModelDefinitionConfig {
+function createModelConfig(id: string, name = id): ModelDefinitionConfig {
   return {
     id,
     name,
     reasoning: false,
     input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
     contextWindow: 128_000,
     maxTokens: 8_192,
   };
 }
-
-function createProviderConfig(
-  overrides: Partial<ModelProviderConfig> & Pick<ModelProviderConfig, "baseUrl">,
-): ModelProviderConfig {
-  return {
-    baseUrl: overrides.baseUrl,
-    models: overrides.models ?? [],
-    ...(overrides.api ? { api: overrides.api } : {}),
-    ...(overrides.apiKey ? { apiKey: overrides.apiKey } : {}),
-    ...(overrides.auth ? { auth: overrides.auth } : {}),
-    ...(overrides.injectNumCtxForOpenAICompat !== undefined
-      ? { injectNumCtxForOpenAICompat: overrides.injectNumCtxForOpenAICompat }
-      : {}),
-    ...(overrides.headers ? { headers: overrides.headers } : {}),
-    ...(overrides.authHeader !== undefined ? { authHeader: overrides.authHeader } : {}),
-  };
-}
-
 describe("provider discovery contract", () => {
   afterEach(() => {
     resolveCopilotApiTokenMock.mockReset();
@@ -256,7 +243,7 @@ describe("provider discovery contract", () => {
             providers: {
               ollama: {
                 baseUrl: "http://ollama-host:11434/v1/",
-                models: [createModelDefinition("llama3.2")],
+                models: [createModelConfig("llama3.2")],
               },
             },
           },
@@ -264,12 +251,12 @@ describe("provider discovery contract", () => {
         env: {} as NodeJS.ProcessEnv,
         resolveProviderApiKey: () => ({ apiKey: undefined }),
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       provider: {
         baseUrl: "http://ollama-host:11434",
         api: "ollama",
         apiKey: "ollama-local",
-        models: [{ id: "llama3.2", name: "llama3.2" }],
+        models: [createModelConfig("llama3.2")],
       },
     });
     expect(buildOllamaProviderMock).not.toHaveBeenCalled();
@@ -433,10 +420,9 @@ describe("provider discovery contract", () => {
           models: {
             providers: {
               "minimax-portal": {
-                ...createProviderConfig({
-                  baseUrl: "https://portal-proxy.example.com/anthropic",
-                  apiKey: "explicit-key",
-                }),
+                baseUrl: "https://portal-proxy.example.com/anthropic",
+                apiKey: "explicit-key",
+                models: [],
               },
             },
           },
@@ -462,9 +448,8 @@ describe("provider discovery contract", () => {
           models: {
             providers: {
               modelstudio: {
-                ...createProviderConfig({
-                  baseUrl: "https://coding.dashscope.aliyuncs.com/v1",
-                }),
+                baseUrl: "https://coding.dashscope.aliyuncs.com/v1",
+                models: [],
               },
             },
           },
