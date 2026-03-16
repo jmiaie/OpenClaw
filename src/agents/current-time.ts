@@ -32,9 +32,17 @@ export function resolveCronStyleNow(cfg: TimeConfigLike, nowMs: number): CronSty
 
 export function appendCronStyleCurrentTimeLine(text: string, cfg: TimeConfigLike, nowMs: number) {
   const base = text.trimEnd();
-  if (!base || base.includes("Current time:")) {
+  if (!base) {
     return base;
   }
   const { timeLine } = resolveCronStyleNow(cfg, nowMs);
+  // Replace any existing stale runtime-injected timestamp line rather than
+  // skipping, so repeated heartbeat/cron invocations always carry a fresh
+  // timestamp. The UTC date suffix avoids matching user-authored lines that
+  // happen to start with "Current time:".
+  const existingTimeRe = /^Current time: .+\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/m;
+  if (existingTimeRe.test(base)) {
+    return base.replace(existingTimeRe, timeLine);
+  }
   return `${base}\n${timeLine}`;
 }
