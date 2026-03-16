@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../../../src/config/config.js";
+import { __testing as threadBindingTesting } from "./thread-bindings.js";
 
 const { defaultRouteConfig } = vi.hoisted(() => ({
   defaultRouteConfig: {
@@ -55,7 +56,12 @@ describe("buildTelegramMessageContext per-topic agentId routing", () => {
   }
 
   beforeEach(() => {
+    threadBindingTesting.resetTelegramThreadBindingsForTests();
     vi.mocked(loadConfig).mockReturnValue(defaultRouteConfig as never);
+  });
+
+  afterEach(() => {
+    threadBindingTesting.resetTelegramThreadBindingsForTests();
   });
 
   it("uses group-level agent when no topic agentId is set", async () => {
@@ -100,7 +106,7 @@ describe("buildTelegramMessageContext per-topic agentId routing", () => {
     expect(ctx?.ctxPayload?.SessionKey).toContain("agent:main:");
   });
 
-  it("preserves an unknown topic agentId in the session key", async () => {
+  it("preserves unknown topic agentId to keep topic session keys stable", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       agents: {
         list: [{ id: "main", default: true }, { id: "zu" }],
@@ -113,6 +119,7 @@ describe("buildTelegramMessageContext per-topic agentId routing", () => {
 
     expect(ctx).not.toBeNull();
     expect(ctx?.ctxPayload?.SessionKey).toContain("agent:ghost:");
+    expect(ctx?.ctxPayload?.SessionKey).toContain("telegram:group:-1001234567890:topic:3");
   });
 
   it("routes DM topic to specific agent when agentId is set", async () => {

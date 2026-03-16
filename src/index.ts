@@ -3,6 +3,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { formatUncaughtError } from "./infra/errors.js";
 import { isMainModule } from "./infra/is-main.js";
+import { shouldInstallGaxiosFetchCompat } from "./infra/node-version.js";
 import { installUnhandledRejectionHandler } from "./infra/unhandled-rejections.js";
 
 const library = await import("./library.js");
@@ -32,12 +33,11 @@ export const waitForever = library.waitForever;
 
 // Legacy direct file entrypoint only. Package root exports now live in library.ts.
 export async function runLegacyCliEntry(argv: string[] = process.argv): Promise<void> {
-  const [{ installGaxiosFetchCompat }, { runCli }] = await Promise.all([
-    import("./infra/gaxios-fetch-compat.js"),
-    import("./cli/run-main.js"),
-  ]);
-
-  installGaxiosFetchCompat();
+  const { runCli } = await import("./cli/run-main.js");
+  if (shouldInstallGaxiosFetchCompat()) {
+    const { installGaxiosFetchCompat } = await import("./infra/gaxios-fetch-compat.js");
+    installGaxiosFetchCompat();
+  }
   await runCli(argv);
 }
 
