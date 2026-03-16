@@ -1,5 +1,4 @@
 import type { Bot, Context } from "grammy";
-import { ensureConfiguredAcpRouteReady } from "../../../src/acp/persistent-bindings.route.js";
 import { resolveChunkMode } from "../../../src/auto-reply/chunk.js";
 import { resolveCommandAuthorization } from "../../../src/auto-reply/command-auth.js";
 import type { CommandArgs } from "../../../src/auto-reply/commands-registry.js";
@@ -16,6 +15,7 @@ import { dispatchReplyWithBufferedBlockDispatcher } from "../../../src/auto-repl
 import { listSkillCommandsForAgents } from "../../../src/auto-reply/skill-commands.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../../../src/channels/command-gating.js";
 import { resolveNativeCommandSessionTargets } from "../../../src/channels/native-command-session-targets.js";
+import { ensureConfiguredAcpRouteReady } from "../../../src/channels/plugins/acp-routing.js";
 import { createReplyPrefixOptions } from "../../../src/channels/reply-prefix.js";
 import { recordInboundSessionMetaSafe } from "../../../src/channels/session-meta.js";
 import type { OpenClawConfig } from "../../../src/config/config.js";

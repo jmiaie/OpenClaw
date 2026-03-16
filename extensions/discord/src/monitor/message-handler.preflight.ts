@@ -1,8 +1,4 @@
 import { ChannelType, MessageType, type User } from "@buape/carbon";
-import {
-  ensureConfiguredAcpRouteReady,
-  resolveConfiguredAcpRoute,
-} from "../../../../src/acp/persistent-bindings.route.js";
 import { hasControlCommand } from "../../../../src/auto-reply/command-detection.js";
 import { shouldHandleTextCommands } from "../../../../src/auto-reply/commands-registry.js";
 import {
@@ -17,6 +13,10 @@ import { formatAllowlistMatchMeta } from "../../../../src/channels/allowlist-mat
 import { resolveControlCommandGate } from "../../../../src/channels/command-gating.js";
 import { logInboundDrop } from "../../../../src/channels/logging.js";
 import { resolveMentionGatingWithBypass } from "../../../../src/channels/mention-gating.js";
+import {
+  ensureConfiguredAcpRouteReady,
+  resolveConfiguredAcpRoute,
+} from "../../../../src/channels/plugins/acp-routing.js";
 import { loadConfig } from "../../../../src/config/config.js";
 import { isDangerousNameMatchingEnabled } from "../../../../src/config/dangerous-name-matching.js";
 import { logVerbose, shouldLogVerbose } from "../../../../src/globals.js";

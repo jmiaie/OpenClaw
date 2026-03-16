@@ -77,7 +77,7 @@ vi.mock("./client.js", () => ({
   createFeishuClient: mockCreateFeishuClient,
 }));
 
-vi.mock("../../../src/acp/persistent-bindings.route.js", () => ({
+vi.mock("../../../src/channels/plugins/acp-routing.js", () => ({
   resolveConfiguredAcpRoute: (params: unknown) => mockResolveConfiguredAcpRoute(params),
   ensureConfiguredAcpRouteReady: (params: unknown) => mockEnsureConfiguredAcpRouteReady(params),
 }));

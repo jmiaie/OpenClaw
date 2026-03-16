@@ -11,26 +11,28 @@ import {
 } from "./native-command.test-helpers.js";
 import { createNoopThreadBindingManager } from "./thread-bindings.js";
 
-type ResolveConfiguredAcpBindingRecordFn =
-  typeof import("../../../../src/acp/persistent-bindings.js").resolveConfiguredAcpBindingRecord;
-type EnsureConfiguredAcpBindingSessionFn =
-  typeof import("../../../../src/acp/persistent-bindings.js").ensureConfiguredAcpBindingSession;
+type ResolveConfiguredAcpRouteFn =
+  typeof import("../../../../src/channels/plugins/acp-routing.js").resolveConfiguredAcpRoute;
+type EnsureConfiguredAcpRouteReadyFn =
+  typeof import("../../../../src/channels/plugins/acp-routing.js").ensureConfiguredAcpRouteReady;
 
 const persistentBindingMocks = vi.hoisted(() => ({
-  resolveConfiguredAcpBindingRecord: vi.fn<ResolveConfiguredAcpBindingRecordFn>(() => null),
-  ensureConfiguredAcpBindingSession: vi.fn<EnsureConfiguredAcpBindingSessionFn>(async () => ({
+  resolveConfiguredAcpRoute: vi.fn<ResolveConfiguredAcpRouteFn>(({ route }) => ({
+    configuredBinding: null,
+    route,
+  })),
+  ensureConfiguredAcpRouteReady: vi.fn<EnsureConfiguredAcpRouteReadyFn>(async () => ({
     ok: true,
-    sessionKey: "agent:codex:acp:binding:discord:default:seed",
   })),
 }));
 
-vi.mock("../../../../src/acp/persistent-bindings.js", async (importOriginal) => {
+vi.mock("../../../../src/channels/plugins/acp-routing.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../../src/acp/persistent-bindings.js")>();
+    await importOriginal<typeof import("../../../../src/channels/plugins/acp-routing.js")>();
   return {
     ...actual,
-    resolveConfiguredAcpBindingRecord: persistentBindingMocks.resolveConfiguredAcpBindingRecord,
-    ensureConfiguredAcpBindingSession: persistentBindingMocks.ensureConfiguredAcpBindingSession,
+    resolveConfiguredAcpRoute: persistentBindingMocks.resolveConfiguredAcpRoute,
+    ensureConfiguredAcpRouteReady: persistentBindingMocks.ensureConfiguredAcpRouteReady,
   };
 });
 
@@ -80,31 +82,37 @@ function createStatusCommand(cfg: OpenClawConfig) {
 }
 
 function setConfiguredBinding(channelId: string, boundSessionKey: string) {
-  persistentBindingMocks.resolveConfiguredAcpBindingRecord.mockReturnValue({
-    spec: {
-      channel: "discord",
-      accountId: "default",
-      conversationId: channelId,
-      agentId: "codex",
-      mode: "persistent",
-    },
-    record: {
-      bindingId: `config:acp:discord:default:${channelId}`,
-      targetSessionKey: boundSessionKey,
-      targetKind: "session",
-      conversation: {
+  persistentBindingMocks.resolveConfiguredAcpRoute.mockImplementation(({ route }) => ({
+    configuredBinding: {
+      spec: {
         channel: "discord",
         accountId: "default",
         conversationId: channelId,
+        agentId: "codex",
+        mode: "persistent",
       },
-      status: "active",
-      boundAt: 0,
+      record: {
+        bindingId: `config:acp:discord:default:${channelId}`,
+        targetSessionKey: boundSessionKey,
+        targetKind: "session",
+        conversation: {
+          channel: "discord",
+          accountId: "default",
+          conversationId: channelId,
+        },
+        status: "active",
+        boundAt: 0,
+      },
     },
-  });
-  persistentBindingMocks.ensureConfiguredAcpBindingSession.mockResolvedValue({
-    ok: true,
-    sessionKey: boundSessionKey,
-  });
+    boundSessionKey,
+    route: {
+      ...route,
+      sessionKey: boundSessionKey,
+      agentId: "codex",
+      matchedBy: "binding.channel",
+    },
+  }));
+  persistentBindingMocks.ensureConfiguredAcpRouteReady.mockResolvedValue({ ok: true });
 }
 
 function createDispatchSpy() {
@@ -127,8 +135,8 @@ function expectBoundSessionDispatch(
   };
   expect(dispatchCall.ctx?.SessionKey).toBe(boundSessionKey);
   expect(dispatchCall.ctx?.CommandTargetSessionKey).toBe(boundSessionKey);
-  expect(persistentBindingMocks.resolveConfiguredAcpBindingRecord).toHaveBeenCalledTimes(1);
-  expect(persistentBindingMocks.ensureConfiguredAcpBindingSession).toHaveBeenCalledTimes(1);
+  expect(persistentBindingMocks.resolveConfiguredAcpRoute).toHaveBeenCalledTimes(1);
+  expect(persistentBindingMocks.ensureConfiguredAcpRouteReady).toHaveBeenCalledTimes(1);
 }
 
 async function expectBoundStatusCommandDispatch(params: {
@@ -153,13 +161,13 @@ async function expectBoundStatusCommandDispatch(params: {
 describe("Discord native plugin command dispatch", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    persistentBindingMocks.resolveConfiguredAcpBindingRecord.mockReset();
-    persistentBindingMocks.resolveConfiguredAcpBindingRecord.mockReturnValue(null);
-    persistentBindingMocks.ensureConfiguredAcpBindingSession.mockReset();
-    persistentBindingMocks.ensureConfiguredAcpBindingSession.mockResolvedValue({
-      ok: true,
-      sessionKey: "agent:codex:acp:binding:discord:default:seed",
-    });
+    persistentBindingMocks.resolveConfiguredAcpRoute.mockReset();
+    persistentBindingMocks.resolveConfiguredAcpRoute.mockImplementation(({ route }) => ({
+      configuredBinding: null,
+      route,
+    }));
+    persistentBindingMocks.ensureConfiguredAcpRouteReady.mockReset();
+    persistentBindingMocks.ensureConfiguredAcpRouteReady.mockResolvedValue({ ok: true });
   });
 
   it("executes matched plugin commands directly without invoking the agent dispatcher", async () => {
@@ -298,8 +306,8 @@ describe("Discord native plugin command dispatch", () => {
     expect(dispatchCall.ctx?.CommandTargetSessionKey).toBe(
       "agent:qwen:discord:channel:1478836151241412759",
     );
-    expect(persistentBindingMocks.resolveConfiguredAcpBindingRecord).toHaveBeenCalledTimes(1);
-    expect(persistentBindingMocks.ensureConfiguredAcpBindingSession).not.toHaveBeenCalled();
+    expect(persistentBindingMocks.resolveConfiguredAcpRoute).toHaveBeenCalledTimes(1);
+    expect(persistentBindingMocks.ensureConfiguredAcpRouteReady).not.toHaveBeenCalled();
   });
 
   it("routes Discord DM native slash commands through configured ACP bindings", async () => {

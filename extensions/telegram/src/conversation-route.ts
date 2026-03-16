@@ -1,4 +1,4 @@
-import { resolveConfiguredAcpRoute } from "../../../src/acp/persistent-bindings.route.js";
+import { resolveConfiguredAcpRoute } from "../../../src/channels/plugins/acp-routing.js";
 import type { OpenClawConfig } from "../../../src/config/config.js";
 import { logVerbose } from "../../../src/globals.js";
 import { getSessionBindingService } from "../../../src/infra/outbound/session-binding-service.js";

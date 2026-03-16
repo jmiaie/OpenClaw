@@ -1,7 +1,7 @@
-import { ensureConfiguredAcpRouteReady } from "../../../src/acp/persistent-bindings.route.js";
 import { resolveAckReaction } from "../../../src/agents/identity.js";
 import { shouldAckReaction as shouldAckReactionGate } from "../../../src/channels/ack-reactions.js";
 import { logInboundDrop } from "../../../src/channels/logging.js";
+import { ensureConfiguredAcpRouteReady } from "../../../src/channels/plugins/acp-routing.js";
 import {
   createStatusReactionController,
   type StatusReactionController,

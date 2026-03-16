@@ -17,7 +17,7 @@ import {
 import {
   ensureConfiguredAcpRouteReady,
   resolveConfiguredAcpRoute,
-} from "../../../src/acp/persistent-bindings.route.js";
+} from "../../../src/channels/plugins/acp-routing.js";
 import { getSessionBindingService } from "../../../src/infra/outbound/session-binding-service.js";
 import { deriveLastRoutePolicy } from "../../../src/routing/resolve-route.js";
 import { resolveAgentIdFromSessionKey } from "../../../src/routing/session-key.js";
