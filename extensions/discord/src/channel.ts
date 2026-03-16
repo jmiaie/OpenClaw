@@ -685,10 +685,12 @@ export const discordPlugin: ChannelPlugin<ResolvedDiscordAccount> = {
       }
     },
     auditAccount: async ({ account, timeoutMs, cfg }) => {
-      const { channelIds, unresolvedChannels } = collectDiscordAuditChannelIds({
+      const _auditIds = collectDiscordAuditChannelIds({
         cfg,
         accountId: account.accountId,
       });
+      const channelIds = _auditIds.channelIds;
+      const unresolvedChannels = _auditIds.unresolvedChannels;
       if (!channelIds.length && unresolvedChannels === 0) {
         return undefined;
       }
