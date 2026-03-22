@@ -3,13 +3,33 @@
 # Or: & ([scriptblock]::Create((iwr -useb https://openclaw.ai/install.ps1))) -NoOnboard
 
 param(
-    [string]$InstallMethod = "npm",
-    [string]$Tag = "latest",
-    [string]$GitDir = "$env:USERPROFILE\openclaw",
+    [string]$InstallMethod = "",
+    [string]$Tag = "",
+    [string]$GitDir = "",
     [switch]$NoOnboard,
     [switch]$NoGitUpdate,
     [switch]$DryRun
 )
+
+# Apply environment variable defaults (params take precedence)
+if ([string]::IsNullOrWhiteSpace($InstallMethod)) {
+    $InstallMethod = if ($env:OPENCLAW_INSTALL_METHOD) { $env:OPENCLAW_INSTALL_METHOD } else { "npm" }
+}
+if ([string]::IsNullOrWhiteSpace($Tag)) {
+    $Tag = if ($env:OPENCLAW_VERSION) { $env:OPENCLAW_VERSION } else { "latest" }
+}
+if ([string]::IsNullOrWhiteSpace($GitDir)) {
+    $GitDir = if ($env:OPENCLAW_GIT_DIR) { $env:OPENCLAW_GIT_DIR } else { "$env:USERPROFILE\openclaw" }
+}
+if (!$NoOnboard -and $env:OPENCLAW_NO_ONBOARD -eq "1") {
+    $NoOnboard = $true
+}
+if (!$NoGitUpdate -and $env:OPENCLAW_GIT_UPDATE -eq "0") {
+    $NoGitUpdate = $true
+}
+if (!$DryRun -and $env:OPENCLAW_DRY_RUN -eq "1") {
+    $DryRun = $true
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -313,7 +333,10 @@ function Main {
     if (!(Ensure-Node)) {
         exit 1
     }
-    
+
+    # Detect if openclaw is already installed (for upgrade detection)
+    $wasAlreadyInstalled = $null -ne (Get-Command openclaw -ErrorAction SilentlyContinue)
+
     if ($InstallMethod -eq "git") {
         if (!(Ensure-Git)) {
             exit 1
@@ -347,11 +370,22 @@ function Main {
         }
     } catch { }
     
+    # Run doctor after git installs and npm upgrades (best effort)
+    if (!$DryRun) {
+        try {
+            $doctorCmd = Get-Command openclaw -ErrorAction SilentlyContinue
+            if ($doctorCmd -and ($InstallMethod -eq "git" -or $wasAlreadyInstalled)) {
+                Write-Host "Running post-install check..." -Level info
+                openclaw doctor --non-interactive 2>&1 | Out-Null
+            }
+        } catch { }
+    }
+
     if (!$NoOnboard -and !$DryRun) {
         Write-Host ""
         Write-Host "Run 'openclaw onboard' to complete setup" -Level info
     }
-    
+
     Write-Host ""
     Write-Host "🦞 OpenClaw installed successfully!" -Level success
 }
